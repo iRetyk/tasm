@@ -1,4 +1,4 @@
-IDEAL
+IDEAL ;dsadsad
 MODEL small
 
 BMP_WIDTH = 10
