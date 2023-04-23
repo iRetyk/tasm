@@ -1,0 +1,6 @@
+bin/
+BIN/
+*.exe
+*.EXE
+*.MAP
+*.OBJ
