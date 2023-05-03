@@ -24,15 +24,26 @@ DATASEG
 	;</Bmp File data>
 	
 	New_Line db 10, 13, '$' ;used in proc - NewLine
+	FruitColor db ? ;holds the color of the fruits according to the Palette
+	ScoreString db "Score: $"
+	Matrix db 64 dup (?) 
+	matrixOffset dw offset Matrix
 	
 	;<packman data>
 	x dw 8 ;head x
-	y dw 9 ;head y
+	y dw 10 ;head y
 	direction dw 0 ;(0-3) right, down, left , up
 	turned db 0 ;bool. will be true if its just after you turned
+	score dw 0
+	dollar db '$'
 	;</packman data>
 	
-	
+	;<ghosts data>
+	xGhost dw 130 ;head x
+	yGhost dw 85 ;head y
+	dirGhost db '2' ; '1' - right, '2' - left
+	ghostCounter db 1 ;when hits 2 ghost will move
+	;</ghosts data>
 	
 CODESEG
 start:
@@ -45,12 +56,20 @@ start:
 	;main
 	call SetGraphic
 	xor ax, ax
-	
 	call Background
 MainLoop:
 	call MovePacman
+	call ShowScore
 	call Delay100ms
 	call Delay100ms
+	inc [ghostCounter]
+	cmp [ghostCounter], 2
+	jne @@DontMoveGhost
+	call MoveGhost
+	mov [ghostCounter], 0
+@@DontMoveGhost:
+	
+	
 	mov ah, 1
 	int 16h
 	jz MainLoop
@@ -86,6 +105,566 @@ ExitLoop:
 exit:
 	mov ax, 4c00h
 	int 21h
+
+
+
+
+;---------------------
+;---------------------
+;---------------------
+;---------------------
+;game proc section 
+;---------------------
+;---------------------
+;---------------------
+;---------------------
+
+proc FindLocation; changes xy cooardinates to a 1-64000
+    push bx
+    xor bx, bx
+    mov bx,[yGhost]
+    dec bx
+    mov ax,320
+    mul bx
+    add ax, [xGhost]
+    pop bx
+    ret
+endp FindLocation
+
+
+
+proc CopyMatrixFromScreen
+    push bp
+    mov bp,sp
+
+    push di
+    push si
+    push cx
+    push dx
+
+    mov di,[bp+10] ;di=The offset you want to copy to
+    mov si,[bp+8] ;si=The location in 0a000h segment
+    mov cx,[bp+6] ;cx=row
+    mov dx,[bp+4] ;dx=col
+@@LOOP:
+    push cx
+
+    mov cx,dx
+    shr cx,1
+
+    push ds ;We swap between ds and es so we can move from the segment 0a000h to the data segement
+    push es
+    pop ds
+    pop es
+
+    cld
+    rep movsw ;dx must be even so we can move it in words, if its an odd number use rep movsb
+
+    push ds
+    push es
+    pop ds
+    pop es
+
+    sub si,dx
+    add si,320
+    pop cx
+loop @@LOOP
+
+    pop dx
+    pop cx
+    pop si
+    pop di
+
+    pop bp
+    ret 8
+endp CopyMatrixFromScreen
+	
+
+
+
+
+;==================
+; Description  : Print a Matrix from memory into Screen.
+; Input        : 1. DX = Line Length, CX = Amount of Lines, Variable matrix = Offset of the matrix you want to print, DI = Location to Print on screen(0 - 64,000)
+; Output:        On screen
+;=================
+proc PutMatrixInScreen
+	push es
+	push ax
+	push si
+	
+	mov ax, 0A000h
+	mov es, ax
+	cld ; for movsb direction si --> di
+	
+	
+	mov si,[matrixOffset]
+	
+@@NextRow:	
+	push cx
+	mov cx, dx
+	rep movsb ; Copy whole line to the screen, si and di advances in movsb
+	sub di,dx ; returns back to the begining of the line 
+	add di, 320 ; go down one line by adding 320
+	
+	
+	pop cx
+	loop @@NextRow
+	
+		
+	pop si
+	pop ax
+	pop es
+    ret
+endp PutMatrixInScreen
+
+
+
+
+
+
+
+;===========================
+;description -delets the fruit with a recursive algorithm that paints the inside of a shape (flood fill)
+;input - cx = x, dx = y
+;output - screen
+;variables - none
+;===========================
+proc DeleteFruit
+
+	push cx
+	push dx
+	
+	
+	push cx
+	push dx
+	call PixelColor
+	cmp al, 0
+	je @@Exit ;pixel is black - out of the shape
+	mov bh, 0
+	mov al, 0
+	mov ah, 0ch
+	int 10h
+	
+	;recursive part
+	add cx, 1
+	call DeleteFruit ;one pixel right
+	sub cx, 2
+	call DeleteFruit ;one pixel left
+	add cx, 1 ;back to original x
+	add dx ,1
+	call DeleteFruit ;one pixel down
+	sub dx, 2
+	call DeleteFruit ; one pixel up
+	
+@@Exit:
+	pop dx
+	pop cx
+	ret
+endp DeleteFruit
+
+;===========================
+;description - Update the fruits color according to the Palette
+;input - none
+;output - [FruitColor]
+;variables - none
+;===========================
+proc UpdateFruitColor
+	push ax
+	push 263
+	push 1
+	call PixelColor
+	mov [FruitColor], al
+	pop ax
+	ret
+endp UpdateFruitColor
+
+
+
+;===========================
+;description - Show the score
+;input - [score]
+;output - screen
+;files - ps.bmp (pacman score)
+;===========================
+proc ShowScore
+	push bx
+	push dx
+	push ax
+	
+	mov bh, 0
+	mov dh, 0
+	mov dl, 74
+	mov ah, 2
+	int 10h
+	mov dx ,offset ScoreString
+	call PrintString
+	mov bh, 0
+	mov dh, 1
+	mov dl, 74
+	mov ah, 2
+	int 10h
+	push [score]
+	call Print
+	
+	pop ax
+	pop dx
+	pop bx
+	ret
+endp ShowScore
+
+
+
+
+;===========================
+;description - Print the screen
+;input - none
+;output - screen
+;variables - none
+;files - bg.bmp 
+;===========================
+proc Background
+	mov [FileName], 'b'
+    mov [FileName + 1], 'g'
+    mov [FileName + 2], '.'
+    mov [FileName + 3], 'b'
+    mov [FileName + 4], 'm'
+    mov [FileName + 5], 'p'
+    
+    mov [BmpLeft], 0
+    mov [BmpTop], 0
+    mov [BmpColSize], 264
+    mov [BmpRowSize], 200
+    call Bmp
+	
+	ret
+endp Background
+
+;---------------------
+;---------------------
+;---------------------
+;---------------------
+;ghost proc section 
+;---------------------
+;---------------------
+;---------------------
+;---------------------
+
+
+
+;===========================
+;description - call the correct move ghost taking into account pacman position
+;input - put in bx ghost nubmer
+;output - screen
+;variables - x,y, 
+;===========================
+proc MoveGhost
+	push ax
+	
+	;back up the background before drawing ghost
+	push offset matrix
+	call FindLocation
+	push ax
+	push 8
+	push 8
+	call CopyMatrixFromScreen
+	
+	mov ax, [xGhost]
+	cmp ax, [x]
+	ja @@Left
+	call MoveGhostRight
+	jmp @@Cont
+@@Left:
+	call MoveGhostLeft
+@@Cont:
+	mov ax, [yGhost]
+	cmp ax, [y]
+	ja @@Up
+	call MoveGhostDown
+	jmp @@Exit
+@@Up:
+	call MoveGhostUp
+@@Exit:
+	pop ax
+	ret 
+endp MoveGhost
+
+
+
+;===========================
+;description - deletes ghost
+;input - put in bx ghost nubmer
+;output - screen
+;variables - x,y, 
+;===========================
+proc DeleteGhost
+	; push ax
+	; push di
+	; push cx
+	; push dx
+	; mov dx, 8
+	; mov cx, 8
+	; call FindLocation
+	; mov di, ax
+	; call PutMatrixInScreen
+	; pop dx
+	; pop cx
+	; pop di
+	; pop ax
+	push [xGhost]
+	push [yGhost]
+	push 9
+	push 8
+	push 0
+	call DrawFullRect
+	ret 
+endp DeleteGhost
+
+
+
+
+;===========================
+;description - moves ghost right with animation
+;input - put in bx ghost nubmer
+;output - screen
+;variables - x,y, 
+;===========================
+proc MoveGhostRight
+	mov [dirGhost], '1'
+	
+	mov [FileName], 'g'
+    mov [FileName + 1], '1'
+    mov [FileName + 2], '.'
+    mov [FileName + 3], 'b'
+    mov [FileName + 4], 'm'
+    mov [FileName + 5], 'p'
+	push ax
+	mov ax, [xGhost]
+	mov [BmpLeft], ax
+	mov ax, [yGhost]
+    mov [BmpTop], ax
+	pop ax
+    mov [BmpColSize], 8
+    mov [BmpRowSize], 8
+    call Bmp
+
+	push di
+	push si
+	mov di, [xGhost]
+	add di, 8
+	mov si, [yGhost]
+	mov cx, 8
+	mov bx, 0
+	@@Line: ;this loop checks if the next line is clear 
+		push di
+		push si
+		call PixelColor
+		call UpdateFruitColor
+		cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, 0
+			je @@Black
+			jmp @@Exit
+		@@Fruit:
+			;yavor's proc
+		@@Black:
+			inc si
+			loop @@Line
+	call DeleteGhost
+	inc [xGhost]
+	inc [BmpLeft]
+	call Bmp
+@@Exit:
+	pop si
+	pop di
+	ret
+
+endp MoveGhostRight
+
+
+
+;===========================
+;description - moves ghost left
+;input - put in bx ghost nubmer
+;output - screen
+;variables - x,y, 
+;===========================
+proc MoveGhostLeft	
+	mov [dirGhost], '2'
+	
+	mov [FileName], 'g'
+    mov [FileName + 1], '2'
+    mov [FileName + 2], '.'
+    mov [FileName + 3], 'b'
+    mov [FileName + 4], 'm'
+    mov [FileName + 5], 'p'
+	push ax
+	mov ax, [xGhost]
+	mov [BmpLeft], ax
+	mov ax, [yGhost]
+    mov [BmpTop], ax
+	pop ax
+    mov [BmpColSize], 8
+    mov [BmpRowSize], 8
+    call Bmp
+
+	push di
+	push si
+	mov di, [xGhost]
+	dec di
+	mov si, [yGhost]
+	mov cx, 8
+	@@Line: ;this loop checks if the next line is clear 
+		push di
+		push si
+		call PixelColor
+		call UpdateFruitColor
+			cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, 0
+			je @@Black
+			jmp @@Exit
+		@@Fruit:
+			;yavor's proc
+		@@Black:
+			inc si
+			loop @@Line
+	call DeleteGhost
+	dec [xGhost]
+	dec [BmpLeft]
+	call Bmp
+@@Exit:
+	pop si
+	pop di
+	ret
+
+endp MoveGhostLeft
+
+
+
+
+;===========================
+;description - moves ghost down
+;input - put in bx ghost nubmer
+;output - screen
+;variables - x,y, 
+;===========================
+proc MoveGhostDown
+	push ax
+	
+	mov [FileName], 'g'
+	mov al, [dirGhost]
+    mov [FileName + 1], al
+    mov [FileName + 2], '.'
+    mov [FileName + 3], 'b'
+    mov [FileName + 4], 'm'
+    mov [FileName + 5], 'p'
+	mov ax, [xGhost]
+	mov [BmpLeft], ax
+	mov ax, [yGhost]
+    mov [BmpTop], ax
+    mov [BmpColSize], 8
+    mov [BmpRowSize], 8
+    call Bmp
+	
+	pop ax
+	
+	push di
+	push si
+	mov di, [yGhost]
+	add di, 9
+	mov si, [xGhost]
+	mov cx, 8
+	mov bx, 0
+	@@Line: ;this loop checks if the next line is clear 
+		push si
+		push di
+		call PixelColor
+		call UpdateFruitColor
+		cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, 0
+			je @@Black
+			jmp @@Exit
+		@@Fruit:
+			;yavor's proc
+		@@Black:
+			inc si
+			loop @@Line
+	call DeleteGhost
+	inc [yGhost]
+	inc [BmpTop]
+	call Bmp
+@@Exit:
+	pop si
+	pop di
+	ret
+endp MoveGhostDown
+
+
+
+
+;===========================
+;description - moves ghost up
+;input - put in bx ghost nubmer
+;output - screen
+;variables - xGhost,yGhost, dirGhost 
+;===========================
+proc MoveGhostUp
+	push ax
+	
+	mov [FileName], 'g'
+    mov al, [dirGhost]
+    mov [FileName + 1], al
+    mov [FileName + 2], '.'
+    mov [FileName + 3], 'b'
+    mov [FileName + 4], 'm'
+    mov [FileName + 5], 'p'
+	mov ax, [xGhost]
+	mov [BmpLeft], ax
+	mov ax, [yGhost]
+    mov [BmpTop], ax
+	pop ax
+    mov [BmpColSize], 8
+    mov [BmpRowSize], 8
+    call Bmp
+
+	push di
+	push si
+	mov di, [yGhost]
+	dec di
+	mov si, [xGhost]
+	mov cx, 8
+	mov bx, 0
+	@@Line: ;this loop checks if the next line is clear 
+		push si
+		push di
+		call PixelColor
+		call UpdateFruitColor
+		cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, 0
+			je @@Black
+			jmp @@Exit
+		@@Fruit:
+			;yavor's proc
+		@@Black:
+			inc si
+			loop @@Line
+	call DeleteGhost
+	dec [yGhost]
+	dec [BmpTop]
+	call Bmp
+@@Exit:
+	pop si
+	pop di
+	ret
+
+endp MoveGhostUp
+
+
+
+
 
 ;---------------------
 ;---------------------
@@ -177,7 +756,7 @@ proc MovePacmanRight
 	call Delay100ms
 	call Delay100ms
 
-	
+	push bx
 	push di
 	push si
 	mov di, [x]
@@ -188,8 +767,22 @@ proc MovePacmanRight
 		push di
 		push si
 		call PixelColor
-		cmp al, 0
-		jne @@Exit
+		call UpdateFruitColor
+		cmp al, [FruitColor]
+		jne @@NotFruit
+			push cx
+			push dx
+			mov cx, di
+			mov dx, si
+			call DeleteFruit
+			pop dx
+			pop cx
+			add [score], 10
+			inc si
+			loop @@Line
+		@@NotFruit:
+			cmp al, 0
+			jne @@Exit ;pixel isn't black = wall
 		inc si
 		loop @@Line
 	call DeletePacman
@@ -200,6 +793,7 @@ proc MovePacmanRight
 @@Exit:
 	pop si
 	pop di
+	pop bx
 	ret
 endp MovePacmanRight
 
@@ -236,15 +830,24 @@ proc MovePacmanDown
 	add di, 9
 	mov si, [x]
 	mov cx, 8
-	
 	@@Line: ;this loop checks if the next line is clear 
 		push si
 		push di
 		call PixelColor
-		cmp al, 0
-		jne @@Exit
-		inc si
-		loop @@Line
+		call UpdateFruitColor
+		cmp al, [FruitColor]
+		jne @@NotFruit
+			call DeleteFruit
+			add [score], 2
+			inc si
+			loop @@Line
+			jmp @@ExitLoop
+		@@NotFruit:
+			cmp al, 0
+			jne @@Exit ;pixel isn't black = wall
+			inc si
+			loop @@Line
+	@@ExitLoop:
 	call DeletePacman
 	inc [y]
 	inc [BmpTop]
@@ -296,8 +899,16 @@ proc MovePacmanLeft
 		push di
 		push si
 		call PixelColor
-		cmp al, 0
-		jne @@Exit
+		call UpdateFruitColor
+		cmp al, [FruitColor]
+		jne @@NotFruit
+			call DeleteFruit
+			add [score], 2
+			inc si
+			loop @@Line
+		@@NotFruit:
+			cmp al, 0
+			jne @@Exit ;pixel isn't black = wall
 		inc si
 		loop @@Line
 	call DeletePacman
@@ -349,8 +960,16 @@ proc MovePacmanUp
 		push si
 		push di
 		call PixelColor
-		cmp al, 0
-		jne @@Exit
+		call UpdateFruitColor
+		cmp al, [FruitColor]
+		jne @@NotFruit
+			call DeleteFruit
+			add [score], 2
+			inc si
+			loop @@Line
+		@@NotFruit:
+			cmp al, 0
+			jne @@Exit ;pixel isn't black = wall
 		inc si
 		loop @@Line
 	call DeletePacman
@@ -368,29 +987,7 @@ endp MovePacmanUp
 
 
 
-;===========================
-;description - Print the screen
-;input - none
-;output - screen
-;variables - none
-;files - bg.bmp 
-;===========================
-proc Background
-	mov [FileName], 'b'
-    mov [FileName + 1], 'g'
-    mov [FileName + 2], '.'
-    mov [FileName + 3], 'b'
-    mov [FileName + 4], 'm'
-    mov [FileName + 5], 'p'
-    
-    mov [BmpLeft], 0
-    mov [BmpTop], 0
-    mov [BmpColSize], 264
-    mov [BmpRowSize], 200
-    call Bmp
-	
-	ret
-endp Background
+
 
 
 
@@ -791,7 +1388,80 @@ proc InputString
 	ret
 endp
 
+;===========================
+;description - Draws a vertical line on the fruit only
+;input -  push in that order: x,y,len,color
+;output - screen
+;variables - none
+;===========================
+proc DrawVerticalLineOnFruit
 
+	push bp
+	mov bp, sp
+	push ax
+	push bx
+	push cx
+	
+	
+	mov bh, 0
+	mov cx, [bp+6]
+@@DrawVertLine:
+	push cx
+	call UpdateFruitColor
+	push [bp + 10]
+	push [bp + 8]
+	call PixelColor
+	cmp al, [FruitColor]
+	jne @@Skip
+	mov cx, [bp+10]
+	mov dx, [bp+8]
+	mov al, [bp+4]
+	mov ah, 0ch
+	int 10h
+@@Skip:
+	pop cx
+	inc [bp+8]
+	loop @@DrawVertLine
+	
+	;mov ax, 2
+	;int 10h
+
+	pop cx
+	pop bx
+	pop ax
+	pop bp
+
+	ret 8
+endp DrawVerticalLineOnFruit
+
+
+
+;===========================
+;description - Draws a rectangle on fruit only
+;input - push in that order: x,y,len,wid,color
+;output - screen
+;variables - none
+;===========================
+proc DrawFullRectOnFruit
+	push bp
+	mov bp, sp
+	push cx
+	
+	mov cx, [bp+6]
+@@DrawR:
+	push [bp+12]
+	push [bp+10]
+	push [bp+8]
+	push [bp+4]
+	call DrawVerticalLineOnFruit
+	add [bp+12], 1
+	loop @@DrawR
+
+	pop cx
+	pop bp
+	
+	ret 10
+endp DrawFullRectOnFruit
 
 ;===========================
 ;description - Draws a vertical line
@@ -810,7 +1480,7 @@ proc DrawVerticalLine
 	
 	mov bh, 0
 	mov cx, [bp+6]
-DrawVertLine:
+@@DrawVertLine:
 	push cx
 	mov cx, [bp+10]
 	mov dx, [bp+8]
@@ -819,7 +1489,7 @@ DrawVertLine:
 	int 10h
 	pop cx
 	inc [bp+8]
-	loop DrawVertLine
+	loop @@DrawVertLine
 	
 	;mov ax, 2
 	;int 10h
@@ -846,14 +1516,14 @@ proc DrawFullRect
 	push cx
 	
 	mov cx, [bp+6]
-DrawR:
+@@DrawR:
 	push [bp+12]
 	push [bp+10]
 	push [bp+8]
 	push [bp+4]
 	call DrawVerticalLine
 	add [bp+12], 1
-	loop DrawR
+	loop @@DrawR
 
 	pop cx
 	pop bp
@@ -915,9 +1585,7 @@ pop_next:
 	   int 21h        ; show all rest digits
        loop pop_next
 		
-	   mov dl, ','
-       mov ah, 2h
-	   int 21h
+	  
 	   
 	   mov dl, 20h
        mov ah, 2h
@@ -938,19 +1606,25 @@ endp ShowAxDecimal
 ;variables - none
 ;===========================
 proc Print
-	mov bh, 0
-	mov dh, 0
-	mov dl, 100
-	mov ah, 2
-	int 10h
-	
 	push bp
 	mov bp, sp
 	push ax
+	push bx
+	push dx
+	
+	; mov bh, 0
+	; mov dh, 0
+	; mov dl, 200
+	; mov ah, 2
+	; int 10h
+	
 	mov ax, [bp +4]
 	call ShowAxDecimal
-	pop ax
+	
 	pop bp
+	pop ax
+	pop bx
+	pop dx
 	ret 2
 endp
 
