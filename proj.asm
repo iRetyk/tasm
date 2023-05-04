@@ -28,6 +28,7 @@ DATASEG
 	ScoreString db "Score: $"
 	Matrix db 64 dup (?) 
 	matrixOffset dw offset Matrix
+	RndCurrentPos dw start
 	
 	;<packman data>
 	x dw 8 ;head x
@@ -36,13 +37,15 @@ DATASEG
 	turned db 0 ;bool. will be true if its just after you turned
 	score dw 0
 	dollar db '$'
+	cont db 1
 	;</packman data>
 	
 	;<ghosts data>
 	xGhost dw 130 ;head x
-	yGhost dw 85 ;head y
+	yGhost dw 80 ;head y
 	dirGhost db '2' ; '1' - right, '2' - left
 	ghostCounter db 1 ;when hits 2 ghost will move
+	stuck db 0 ;bool var represesnts if the ghost is stuck in a wall
 	;</ghosts data>
 	
 CODESEG
@@ -58,6 +61,9 @@ start:
 	xor ax, ax
 	call Background
 MainLoop:
+	call AreTouching
+	cmp [cont], 1
+	jne ExitLoop
 	call MovePacman
 	call ShowScore
 	call Delay100ms
@@ -84,7 +90,7 @@ MainLoop:
 	cmp ah, 4dh
 	je Right
 	cmp ah, 1
-	je ExitLoop
+	mov [cont], 0
 	jmp MainLoop
 Up:
 	mov [direction], 3
@@ -118,6 +124,44 @@ exit:
 ;---------------------
 ;---------------------
 ;---------------------
+
+
+
+
+;===========================
+;description - checks if the pacman and the ghost are touching 
+;input - none
+;output - if touching ->cont = 0
+;variables - none
+;===========================
+proc AreTouching
+	push ax
+	mov ax, [x]
+	sub ax, [xGhost]
+	cmp ax, 9
+	jnl @@ExitProc
+	cmp ax, -9
+	jng @@ExitProc
+	
+	mov ax, [y]
+	sub ax, [yGhost]
+	cmp ax, 9
+	jnl @@ExitProc
+	cmp ax, -9
+	jng @@ExitProc
+	;if we got until here they are touching
+	mov [cont], 0
+@@ExitProc:
+	pop ax
+	ret
+endp AreTouching
+
+
+
+
+
+
+
 
 proc FindLocation; changes xy cooardinates to a 1-64000
     push bx
@@ -239,8 +283,9 @@ proc DeleteFruit
 	push cx
 	push dx
 	call PixelColor
-	cmp al, 0
-	je @@Exit ;pixel is black - out of the shape
+	call UpdateFruitColor
+	cmp al, [FruitColor]
+	jne @@Exit ;pixel isn't fruit - out of the shape
 	mov bh, 0
 	mov al, 0
 	mov ah, 0ch
@@ -361,22 +406,22 @@ endp Background
 proc MoveGhost
 	push ax
 	
-	;back up the background before drawing ghost
-	push offset matrix
-	call FindLocation
-	push ax
-	push 8
-	push 8
-	call CopyMatrixFromScreen
+	
 	
 	mov ax, [xGhost]
 	cmp ax, [x]
 	ja @@Left
 	call MoveGhostRight
-	jmp @@Cont
+	cmp [stuck], 1
+	je @@YAxis
+	jmp @@Exit
 @@Left:
 	call MoveGhostLeft
-@@Cont:
+	cmp [stuck], 1
+	je @@YAxis
+	jmp @@Exit
+
+@@Yaxis:
 	mov ax, [yGhost]
 	cmp ax, [y]
 	ja @@Up
@@ -385,6 +430,7 @@ proc MoveGhost
 @@Up:
 	call MoveGhostUp
 @@Exit:
+	mov [stuck], 0
 	pop ax
 	ret 
 endp MoveGhost
@@ -464,9 +510,16 @@ proc MoveGhostRight
 			je @@Fruit
 			cmp al, 0
 			je @@Black
+			mov [stuck] ,1
 			jmp @@Exit
 		@@Fruit:
-			;yavor's proc
+			;back up the background before drawing ghost
+			push offset matrix
+			call FindLocation
+			push ax
+			push 8
+			push 8
+			call CopyMatrixFromScreen
 		@@Black:
 			inc si
 			loop @@Line
@@ -523,9 +576,16 @@ proc MoveGhostLeft
 			je @@Fruit
 			cmp al, 0
 			je @@Black
+			mov [stuck] ,1
 			jmp @@Exit
 		@@Fruit:
-			;yavor's proc
+			;back up the background before drawing ghost
+			push offset matrix
+			call FindLocation
+			push ax
+			push 8
+			push 8
+			call CopyMatrixFromScreen
 		@@Black:
 			inc si
 			loop @@Line
@@ -837,8 +897,14 @@ proc MovePacmanDown
 		call UpdateFruitColor
 		cmp al, [FruitColor]
 		jne @@NotFruit
+			push cx
+			push dx
+			mov cx, si
+			mov dx, di
 			call DeleteFruit
-			add [score], 2
+			pop dx
+			pop cx
+			add [score], 10
 			inc si
 			loop @@Line
 			jmp @@ExitLoop
@@ -902,8 +968,14 @@ proc MovePacmanLeft
 		call UpdateFruitColor
 		cmp al, [FruitColor]
 		jne @@NotFruit
+			push cx
+			push dx
+			mov cx, di
+			mov dx, si
 			call DeleteFruit
-			add [score], 2
+			pop dx
+			pop cx
+			add [score], 10
 			inc si
 			loop @@Line
 		@@NotFruit:
@@ -963,8 +1035,14 @@ proc MovePacmanUp
 		call UpdateFruitColor
 		cmp al, [FruitColor]
 		jne @@NotFruit
+			push cx
+			push dx
+			mov cx, si
+			mov dx, di
 			call DeleteFruit
-			add [score], 2
+			pop dx
+			pop cx
+			add [score], 10
 			inc si
 			loop @@Line
 		@@NotFruit:
@@ -1658,6 +1736,183 @@ proc SetText
 endp SetText
 
 
+;---------------------
+;---------------------
+;---------------------
+;---------------------
+;Random proc section 
+;---------------------
+;---------------------
+;---------------------
+;---------------------
 
+
+
+
+; Description  : get RND between any bl and bh includs (max 0 -255)
+; Input        : 1. Bl = min (from 0) , BH , Max (till 255)
+; 			     2. RndCurrentPos a  word variable,   help to get good rnd number
+; 				 	Declre it at DATASEG :  RndCurrentPos dw ,0
+;				 3. EndOfCsLbl: is label at the end of the program one line above END start		
+; Output:        Al - rnd num from bl to bh  (example 50 - 150)
+; More Info:
+; 	Bl must be less than Bh 
+; 	in order to get good random value again and agin the Code segment size should be 
+; 	at least the number of times the procedure called at the same second ... 
+; 	for example - if you call to this proc 50 times at the same second  - 
+; 	Make sure the cs size is 50 bytes or more 
+; 	(if not, make it to be more) 
+proc RandomByCs
+    push es
+	push si
+	push di
+	
+	mov ax, 40h
+	mov	es, ax
+	
+	sub bh,bl  ; we will make rnd number between 0 to the delta between bl and bh
+			   ; Now bh holds only the delta
+	cmp bh,0
+	jz @@ExitP
+ 
+	mov di, [word RndCurrentPos]
+	call MakeMask ; will put in si the right mask according the delta (bh) (example for 28 will put 31)
+	
+RandLoop: ;  generate random number 
+	mov ax, [es:06ch] ; read timer counter
+	mov ah, [byte cs:di] ; read one byte from memory (from semi random byte at cs)
+	xor al, ah ; xor memory and counter
+	
+	; Now inc di in order to get a different number next time
+	inc di
+	cmp di,(EndOfCsLbl - start - 1)
+	jb @@Continue
+	mov di, offset start
+@@Continue:
+	mov [word RndCurrentPos], di
+	
+	and ax, si ; filter result between 0 and si (the nask)
+	cmp al,bh    ;do again if  above the delta
+	ja RandLoop
+	
+	add al,bl  ; add the lower limit to the rnd num
+		 
+@@ExitP:	
+	pop di
+	pop si
+	pop es
+	ret
+endp RandomByCs
+
+
+; Description  : get RND between any bl and bh includs (max 0 - 65535)
+; Input        : 1. BX = min (from 0) , DX, Max (till 64k -1)
+; 			     2. RndCurrentPos a  word variable,   help to get good rnd number
+; 				 	Declre it at DATASEG :  RndCurrentPos dw ,0
+;				 3. EndOfCsLbl: is label at the end of the program one line above END start		
+; Output:        AX - rnd num from bx to dx  (example 50 - 1550)
+; More Info:
+; 	BX  must be less than DX 
+; 	in order to get good random value again and again the Code segment size should be 
+; 	at least the number of times the procedure called at the same second ... 
+; 	for example - if you call to this proc 50 times at the same second  - 
+; 	Make sure the cs size is 50 bytes or more 
+; 	(if not, make it to be more) 
+proc RandomByCsWord
+    push es
+	push si
+	push di
+ 
+	
+	mov ax, 40h
+	mov	es, ax
+	
+	sub dx,bx  ; we will make rnd number between 0 to the delta between bx and dx
+			   ; Now dx holds only the delta
+	cmp dx,0
+	jz @@ExitP
+	
+	push bx
+	
+	mov di, [word RndCurrentPos]
+	call MakeMaskWord ; will put in si the right mask according the delta (bh) (example for 28 will put 31)
+	
+@@RandLoop: ;  generate random number 
+	mov bx, [es:06ch] ; read timer counter
+	
+	mov ax, [word cs:di] ; read one word from memory (from semi random bytes at cs)
+	xor ax, bx ; xor memory and counter
+	
+	; Now inc di in order to get a different number next time
+	inc di
+	inc di
+	cmp di,(EndOfCsLbl - start - 2)
+	jb @@Continue
+	mov di, offset start
+@@Continue:
+	mov [word RndCurrentPos], di
+	
+	and ax, si ; filter result between 0 and si (the nask)
+	
+	cmp ax,dx    ;do again if  above the delta
+	ja @@RandLoop
+	pop bx
+	add ax,bx  ; add the lower limit to the rnd num
+		 
+@@ExitP:
+	
+	pop di
+	pop si
+	pop es
+	ret
+endp RandomByCsWord
+
+; make mask acording to bh size 
+; output Si = mask put 1 in all bh range
+; example  if bh 4 or 5 or 6 or 7 si will be 7
+; 		   if Bh 64 till 127 si will be 127
+Proc MakeMask    
+    push bx
+
+	mov si,1
+    
+@@again:
+	shr bh,1
+	cmp bh,0
+	jz @@EndProc
+	
+	shl si,1 ; add 1 to si at right
+	inc si
+	
+	jmp @@again
+	
+@@EndProc:
+    pop bx
+	ret
+endp  MakeMask
+
+
+Proc MakeMaskWord    
+    push dx
+	
+	mov si,1
+    
+@@again:
+	shr dx,1
+	cmp dx,0
+	jz @@EndProc
+	
+	shl si,1 ; add 1 to si at right
+	inc si
+	
+	jmp @@again
+	
+@@EndProc:
+    pop dx
+	ret
+endp  MakeMaskWord
+
+
+EndOfCsLbl:
 
 END start
