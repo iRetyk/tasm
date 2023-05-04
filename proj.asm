@@ -25,7 +25,12 @@ DATASEG
 	
 	New_Line db 10, 13, '$' ;used in proc - NewLine
 	FruitColor db ? ;holds the color of the fruits according to the Palette
-	ScoreString db "Score: $"
+	BestString db "Best:$"
+	BestScoreString db "Best "
+	ScoreString db "Score:$"
+	NewBestScoreString db "New Best Score!!!! $"
+	PlayAgain db "Press enter to play again$"
+	PlayAgainPart2 db "Press esc to exit$"
 	Matrix db 64 dup (?) 
 	matrixOffset dw offset Matrix
 	RndCurrentPos dw start
@@ -36,6 +41,7 @@ DATASEG
 	direction dw 0 ;(0-3) right, down, left , up
 	turned db 0 ;bool. will be true if its just after you turned
 	score dw 0
+	bestScore dw 0
 	dollar db '$'
 	cont db 1
 	;</packman data>
@@ -55,7 +61,6 @@ start:
 ; --------------------------
 ; Your code here
 ; --------------------------
-
 	;main
 	call SetGraphic
 	xor ax, ax
@@ -63,17 +68,17 @@ start:
 MainLoop:
 	call AreTouching
 	cmp [cont], 1
-	jne ExitLoop
+	jne Ending
 	call MovePacman
 	call ShowScore
 	call Delay100ms
 	call Delay100ms
 	inc [ghostCounter]
 	cmp [ghostCounter], 2
-	jne @@DontMoveGhost
+	jne DontMoveGhost
 	call MoveGhost
 	mov [ghostCounter], 0
-@@DontMoveGhost:
+DontMoveGhost:
 	
 	
 	mov ah, 1
@@ -105,6 +110,13 @@ Left:
 	mov [direction], 2
 	jmp MainLoop
 
+Ending:
+	call EndScreen
+	cmp al, 0
+	je ExitLoop
+	call Restart
+	jmp MainLoop
+
 ExitLoop:
 	call SetText
 	
@@ -125,7 +137,117 @@ exit:
 ;---------------------
 ;---------------------
 
+;===========================
+;description - restarts all variables
+;input - none
+;output - none
+;variables - none
+;===========================
+proc Restart
+	mov [cont], 1
+	mov [x], 8
+	mov [y], 10
+	mov [direction], 0
+	mov [score], 0
+	mov [xGhost], 130
+	mov [yGhost], 80
+	mov [ghostCounter], 1
+	call Background
+	ret
+endp Restart
 
+
+;===========================
+;description - displays ending screen and ask if you want to restart
+;input - none
+;output - if restart al = 1
+;variables - none
+;===========================
+proc EndScreen
+	mov [FileName], 'g'
+    mov [FileName + 1], 'o'
+    mov [FileName + 2], '.'
+    mov [FileName + 3], 'b'
+    mov [FileName + 4], 'm'
+    mov [FileName + 5], 'p'
+    
+    mov [BmpLeft], 0
+    mov [BmpTop], 0
+    mov [BmpColSize], 320
+    mov [BmpRowSize], 200
+    call Bmp
+	
+	mov ax, [score]
+	cmp ax, [bestScore]
+	jge @@NewBS
+	mov bh, 0
+	mov dh, 3
+	mov dl, 15
+	mov ah, 2
+	int 10h
+	mov dx, offset ScoreString
+	call PrintString
+	mov ax, [score]
+	call ShowAxDecimal
+	
+	mov bh, 0
+	mov dh, 5
+	mov dl, 12
+	mov ah, 2
+	int 10h
+	mov dx, offset BestScoreString
+	call PrintString
+	mov ax, [bestScore]
+	call ShowAxDecimal
+	jmp @@Cont
+@@NewBS:
+	mov ax, [score]
+	mov [bestScore], ax
+	mov bh, 0
+	mov dh, 3
+	mov dl, 15
+	mov ah, 2
+	int 10h
+	mov dx, offset ScoreString
+	call PrintString
+	mov ax, [score]
+	call ShowAxDecimal
+	
+	mov bh, 0
+	mov dh, 5
+	mov dl, 12
+	mov ah, 2
+	int 10h
+	mov dx, offset NewBestScoreString
+	call PrintString
+
+@@Cont:
+	mov bh, 0
+	mov dh, 19
+	mov dl, 8
+	mov ah, 2
+	int 10h
+	mov dx, offset PlayAgain
+	call PrintString
+	mov bh, 0
+	mov dh, 21
+	mov dl, 12
+	mov ah, 2
+	int 10h
+	mov dx, offset PlayAgainPart2
+	call PrintString
+	
+	mov ah, 0
+	int 16h
+	cmp ah, 1
+	jne @@PlayAgain
+	mov al, 0 
+	jmp @@ExitLoop
+@@PlayAgain:
+	mov al, 1
+@@ExitLoop:
+	ret
+endp EndScreen
 
 
 ;===========================
@@ -138,16 +260,16 @@ proc AreTouching
 	push ax
 	mov ax, [x]
 	sub ax, [xGhost]
-	cmp ax, 9
+	cmp ax, 8
 	jnl @@ExitProc
-	cmp ax, -9
+	cmp ax, -8
 	jng @@ExitProc
 	
 	mov ax, [y]
 	sub ax, [yGhost]
-	cmp ax, 9
+	cmp ax, 8
 	jnl @@ExitProc
-	cmp ax, -9
+	cmp ax, -8
 	jng @@ExitProc
 	;if we got until here they are touching
 	mov [cont], 0
@@ -162,7 +284,12 @@ endp AreTouching
 
 
 
-
+;===========================
+;description - changes the cooardinates of the ghost to one number between 1 -64000
+;input - xGhost y GHost
+;output - ax
+;variables - none
+;===========================
 proc FindLocation; changes xy cooardinates to a 1-64000
     push bx
     xor bx, bx
@@ -175,61 +302,58 @@ proc FindLocation; changes xy cooardinates to a 1-64000
     ret
 endp FindLocation
 
-
-
-proc CopyMatrixFromScreen
-    push bp
-    mov bp,sp
-
-    push di
-    push si
-    push cx
-    push dx
-
-    mov di,[bp+10] ;di=The offset you want to copy to
-    mov si,[bp+8] ;si=The location in 0a000h segment
-    mov cx,[bp+6] ;cx=row
-    mov dx,[bp+4] ;dx=col
-@@LOOP:
-    push cx
-
-    mov cx,dx
-    shr cx,1
-
-    push ds ;We swap between ds and es so we can move from the segment 0a000h to the data segement
-    push es
-    pop ds
-    pop es
-
-    cld
-    rep movsw ;dx must be even so we can move it in words, if its an odd number use rep movsb
-
-    push ds
-    push es
-    pop ds
-    pop es
-
-    sub si,dx
-    add si,320
-    pop cx
-loop @@LOOP
-
-    pop dx
-    pop cx
-    pop si
-    pop di
-
-    pop bp
-    ret 8
-endp CopyMatrixFromScreen
+;==================
+; Description  : copies a matrix from screen to ds
+; Input        : 1. dx = Line Length, cx = Amount of Lines, Variable matrix = Offset of the matrix you want to print, DI = Location to Print on screen(0 - 64,000)
+; Output:        On screen
+;=================	
+proc PutMatrixInData
+	push es
+	push ax
+	push si
 	
+	mov ax, 0A000h
+	mov es, ax
+	cld
+	
+	push dx
+	mov ax,cx
+	mul dx
+	mov bp,ax
+	pop dx
 
+	mov si,[matrixOffset]
+
+@@NextRow:	
+
+	push cx
+	mov cx, dx
+	@@copy: ; Copy line to the data
+		mov al, [es:di]
+		mov [ds:si], al
+		inc si
+		inc di
+		loop @@copy
+
+	sub di,dx
+
+	add di, 320
+	pop cx
+	loop @@NextRow
+
+@@endProc:	
+	pop si
+	pop ax
+	pop es
+    ret
+
+endp PutMatrixInData
 
 
 
 ;==================
 ; Description  : Print a Matrix from memory into Screen.
-; Input        : 1. DX = Line Length, CX = Amount of Lines, Variable matrix = Offset of the matrix you want to print, DI = Location to Print on screen(0 - 64,000)
+; Input        : 1. dx = Line Length, cx = Amount of Lines, Variable matrix = Offset of the matrix you want to print, DI = Location to Print on screen(0 - 64,000)
 ; Output:        On screen
 ;=================
 proc PutMatrixInScreen
@@ -352,6 +476,20 @@ proc ShowScore
 	push [score]
 	call Print
 	
+	mov bh, 0
+	mov dh, 3
+	mov dl, 74
+	mov ah, 2
+	int 10h
+	mov dx ,offset BestString
+	call PrintString
+	mov bh, 0
+	mov dh, 4
+	mov dl, 74
+	mov ah, 2
+	int 10h
+	push [bestScore]
+	call Print
 	pop ax
 	pop dx
 	pop bx
@@ -398,39 +536,75 @@ endp Background
 
 
 ;===========================
-;description - call the correct move ghost taking into account pacman position
+;description - call the correct move ghost acoording to pacman position. if the ghost is stuck in a wall decide randomly on the next direction
 ;input - put in bx ghost nubmer
 ;output - screen
 ;variables - x,y, 
 ;===========================
 proc MoveGhost
 	push ax
+	push bx
+	push cx
+	push dx
+	push di
 	
-	
+	;back up the background before drawing ghost
+	call FindLocation
+	mov di ,ax
+	mov cx, 8
+	mov dx, 8
+	call PutMatrixInData
+	mov ah, 0
+
 	
 	mov ax, [xGhost]
 	cmp ax, [x]
+	je @@Stuck
 	ja @@Left
+	@@Right:
 	call MoveGhostRight
 	cmp [stuck], 1
-	je @@YAxis
-	jmp @@Exit
+	je @@Stuck
+	jmp @@Cont
 @@Left:
 	call MoveGhostLeft
 	cmp [stuck], 1
-	je @@YAxis
-	jmp @@Exit
-
-@@Yaxis:
+	je @@Stuck
+	jmp @@Cont	
+@@Cont:
 	mov ax, [yGhost]
 	cmp ax, [y]
 	ja @@Up
+	@@Down:
 	call MoveGhostDown
+	cmp [stuck], 1
+	je @@Stuck
 	jmp @@Exit
 @@Up:
 	call MoveGhostUp
-@@Exit:
+	cmp [stuck], 1
+	je @@Stuck
+	jmp @@Exit
+
+@@Stuck:
 	mov [stuck], 0
+	mov bl, 0
+	mov bh, 3
+	call RandomByCs
+	cmp al, 0
+	je @@Right
+	cmp al, 1
+	je @@Left
+	cmp al, 2
+	je @@Down
+	cmp al, 3
+	je @@Up
+
+@@Exit:	
+	pop di
+	pop dx
+	pop cx
+	pop bx
 	pop ax
 	ret 
 endp MoveGhost
@@ -448,7 +622,7 @@ proc DeleteGhost
 	; push di
 	; push cx
 	; push dx
-	; mov dx, 8
+	; mov dx, 9
 	; mov cx, 8
 	; call FindLocation
 	; mov di, ax
@@ -514,12 +688,12 @@ proc MoveGhostRight
 			jmp @@Exit
 		@@Fruit:
 			;back up the background before drawing ghost
-			push offset matrix
-			call FindLocation
-			push ax
-			push 8
-			push 8
-			call CopyMatrixFromScreen
+			; push offset matrix
+			; call FindLocation
+			; push ax
+			; push 8
+			; push 8
+			; call PutMatrixInData
 		@@Black:
 			inc si
 			loop @@Line
@@ -580,12 +754,12 @@ proc MoveGhostLeft
 			jmp @@Exit
 		@@Fruit:
 			;back up the background before drawing ghost
-			push offset matrix
-			call FindLocation
-			push ax
-			push 8
-			push 8
-			call CopyMatrixFromScreen
+			; push offset matrix
+			; call FindLocation
+			; push ax
+			; push 8
+			; push 8
+			; call PutMatrixInData
 		@@Black:
 			inc si
 			loop @@Line
@@ -837,7 +1011,7 @@ proc MovePacmanRight
 			call DeleteFruit
 			pop dx
 			pop cx
-			add [score], 10
+			add [score], 14
 			inc si
 			loop @@Line
 		@@NotFruit:
@@ -904,7 +1078,7 @@ proc MovePacmanDown
 			call DeleteFruit
 			pop dx
 			pop cx
-			add [score], 10
+			add [score], 14
 			inc si
 			loop @@Line
 			jmp @@ExitLoop
@@ -975,7 +1149,7 @@ proc MovePacmanLeft
 			call DeleteFruit
 			pop dx
 			pop cx
-			add [score], 10
+			add [score], 14
 			inc si
 			loop @@Line
 		@@NotFruit:
@@ -1042,7 +1216,7 @@ proc MovePacmanUp
 			call DeleteFruit
 			pop dx
 			pop cx
-			add [score], 10
+			add [score], 14
 			inc si
 			loop @@Line
 		@@NotFruit:
@@ -1663,7 +1837,11 @@ pop_next:
 	   int 21h        ; show all rest digits
        loop pop_next
 		
-	  
+		mov bh, 0
+		mov dh, 2
+		mov dl, 74
+		mov ah, 2
+		int 10h
 	   
 	   mov dl, 20h
        mov ah, 2h
