@@ -24,7 +24,8 @@ DATASEG
 	;</Bmp File data>
 	
 	New_Line db 10, 13, '$' ;used in proc - NewLine
-	FruitColor db ? ;holds the color of the fruits according to the Palette
+	FruitColor db ? ;holds the color of the fruit according to the Palette
+	PeachColor db ? ; "-"
 	BestString db "Best:$"
 	BestScoreString db "Best "
 	ScoreString db "Score:$"
@@ -52,6 +53,7 @@ DATASEG
 	dirGhost db '2' ; '1' - right, '2' - left
 	ghostCounter db 1 ;when hits 2 ghost will move
 	stuck db 0 ;bool var represesnts if the ghost is stuck in a wall
+	freeze db 0 ;bool var represesnting if the ghost need to freeze
 	;</ghosts data>
 	
 CODESEG
@@ -393,13 +395,14 @@ endp PutMatrixInScreen
 
 
 ;===========================
-;description -delets the fruit with a recursive algorithm that paints the inside of a shape (flood fill)
+;description - delets the fruit with a recursive algorithm that paints the inside of a shape (flood fill)
 ;input - cx = x, dx = y
 ;output - screen
 ;variables - none
 ;===========================
 proc DeleteFruit
 
+	
 	push cx
 	push dx
 	
@@ -409,7 +412,11 @@ proc DeleteFruit
 	call PixelColor
 	call UpdateFruitColor
 	cmp al, [FruitColor]
-	jne @@Exit ;pixel isn't fruit - out of the shape
+	je @@Cont 
+	cmp al, [PeachColor]
+	je @@Cont
+	jmp @@Exit;pixel isn't fruit - out of the shape
+@@Cont:
 	mov bh, 0
 	mov al, 0
 	mov ah, 0ch
@@ -433,7 +440,7 @@ proc DeleteFruit
 endp DeleteFruit
 
 ;===========================
-;description - Update the fruits color according to the Palette
+;description - Update the fruit and peach color according to the Palette
 ;input - none
 ;output - [FruitColor]
 ;variables - none
@@ -444,9 +451,17 @@ proc UpdateFruitColor
 	push 1
 	call PixelColor
 	mov [FruitColor], al
+	push 263
+	push 2
+	call PixelColor
+	mov [PeachColor], al
 	pop ax
 	ret
 endp UpdateFruitColor
+
+
+
+
 
 
 
@@ -680,7 +695,9 @@ proc MoveGhostRight
 		push si
 		call PixelColor
 		call UpdateFruitColor
-		cmp al, [FruitColor]
+			cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, [PeachColor]
 			je @@Fruit
 			cmp al, 0
 			je @@Black
@@ -747,6 +764,8 @@ proc MoveGhostLeft
 		call PixelColor
 		call UpdateFruitColor
 			cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, [PeachColor]
 			je @@Fruit
 			cmp al, 0
 			je @@Black
@@ -815,7 +834,9 @@ proc MoveGhostDown
 		push di
 		call PixelColor
 		call UpdateFruitColor
-		cmp al, [FruitColor]
+			cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, [PeachColor]
 			je @@Fruit
 			cmp al, 0
 			je @@Black
@@ -875,7 +896,9 @@ proc MoveGhostUp
 		push di
 		call PixelColor
 		call UpdateFruitColor
-		cmp al, [FruitColor]
+			cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, [PeachColor]
 			je @@Fruit
 			cmp al, 0
 			je @@Black
@@ -1002,8 +1025,15 @@ proc MovePacmanRight
 		push si
 		call PixelColor
 		call UpdateFruitColor
-		cmp al, [FruitColor]
-		jne @@NotFruit
+			cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, [PeachColor]
+			je @@Peach
+			cmp al, 0
+			je @@Black
+			jmp @@Exit
+		@@Peach:
+			add [score], 56
 			push cx
 			push dx
 			mov cx, di
@@ -1011,14 +1041,21 @@ proc MovePacmanRight
 			call DeleteFruit
 			pop dx
 			pop cx
-			add [score], 14
+			mov [freeze], 1
 			inc si
 			loop @@Line
-		@@NotFruit:
-			cmp al, 0
-			jne @@Exit ;pixel isn't black = wall
-		inc si
-		loop @@Line
+		@@Fruit:
+			add [score], 14
+			push cx
+			push dx
+			mov cx, di
+			mov dx, si
+			call DeleteFruit
+			pop dx
+			pop cx
+		@@Black:
+			inc si
+			loop @@Line
 	call DeletePacman
 	inc [x]
 	inc [BmpLeft]
@@ -1069,8 +1106,15 @@ proc MovePacmanDown
 		push di
 		call PixelColor
 		call UpdateFruitColor
-		cmp al, [FruitColor]
-		jne @@NotFruit
+			cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, [PeachColor]
+			je @@Peach
+			cmp al, 0
+			je @@Black
+			jmp @@Exit
+		@@Peach:
+			add [score], 56
 			push cx
 			push dx
 			mov cx, si
@@ -1078,16 +1122,21 @@ proc MovePacmanDown
 			call DeleteFruit
 			pop dx
 			pop cx
+			mov [freeze], 1
+			inc si
+			loop @@Line
+		@@Fruit:
 			add [score], 14
+			push cx
+			push dx
+			mov cx, si
+			mov dx, di
+			call DeleteFruit
+			pop dx
+			pop cx
+		@@Black:
 			inc si
 			loop @@Line
-			jmp @@ExitLoop
-		@@NotFruit:
-			cmp al, 0
-			jne @@Exit ;pixel isn't black = wall
-			inc si
-			loop @@Line
-	@@ExitLoop:
 	call DeletePacman
 	inc [y]
 	inc [BmpTop]
@@ -1140,8 +1189,15 @@ proc MovePacmanLeft
 		push si
 		call PixelColor
 		call UpdateFruitColor
-		cmp al, [FruitColor]
-		jne @@NotFruit
+			cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, [PeachColor]
+			je @@Peach
+			cmp al, 0
+			je @@Black
+			jmp @@Exit
+		@@Peach:
+			add [score], 56
 			push cx
 			push dx
 			mov cx, di
@@ -1149,14 +1205,21 @@ proc MovePacmanLeft
 			call DeleteFruit
 			pop dx
 			pop cx
-			add [score], 14
+			mov [freeze], 1
 			inc si
 			loop @@Line
-		@@NotFruit:
-			cmp al, 0
-			jne @@Exit ;pixel isn't black = wall
-		inc si
-		loop @@Line
+		@@Fruit:
+			add [score], 14
+			push cx
+			push dx
+			mov cx, di
+			mov dx, si
+			call DeleteFruit
+			pop dx
+			pop cx
+		@@Black:
+			inc si
+			loop @@Line
 	call DeletePacman
 	dec [x]
 	dec [BmpLeft]
@@ -1207,8 +1270,15 @@ proc MovePacmanUp
 		push di
 		call PixelColor
 		call UpdateFruitColor
-		cmp al, [FruitColor]
-		jne @@NotFruit
+			cmp al, [FruitColor]
+			je @@Fruit
+			cmp al, [PeachColor]
+			je @@Peach
+			cmp al, 0
+			je @@Black
+			jmp @@Exit
+		@@Peach:
+			add [score], 56
 			push cx
 			push dx
 			mov cx, si
@@ -1216,14 +1286,21 @@ proc MovePacmanUp
 			call DeleteFruit
 			pop dx
 			pop cx
-			add [score], 14
+			mov [freeze], 1
 			inc si
 			loop @@Line
-		@@NotFruit:
-			cmp al, 0
-			jne @@Exit ;pixel isn't black = wall
-		inc si
-		loop @@Line
+		@@Fruit:
+			add [score], 14
+			push cx
+			push dx
+			mov cx, si
+			mov dx, di
+			call DeleteFruit
+			pop dx
+			pop cx
+		@@Black:
+			inc si
+			loop @@Line
 	call DeletePacman
 	dec [y]
 	dec [BmpTop]
