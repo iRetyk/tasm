@@ -45,6 +45,7 @@ DATASEG
 	bestScore dw 0
 	dollar db '$'
 	cont db 1
+	freezeCounter db 0
 	;</packman data>
 	
 	;<ghosts data>
@@ -54,6 +55,7 @@ DATASEG
 	ghostCounter db 1 ;when hits 2 ghost will move
 	stuck db 0 ;bool var represesnts if the ghost is stuck in a wall
 	freeze db 0 ;bool var represesnting if the ghost need to freeze
+	eaten db 0;bool
 	;</ghosts data>
 	
 CODESEG
@@ -69,20 +71,37 @@ start:
 	call Background
 MainLoop:
 	call AreTouching
-	cmp [cont], 1
-	jne Ending
+	
 	call MovePacman
 	call ShowScore
 	call Delay100ms
 	call Delay100ms
+	
+	cmp [freeze], 1
+	je DontMoveGhost
+	inc [freezeCounter]
+	
 	inc [ghostCounter]
+	
+	
 	cmp [ghostCounter], 2
 	jne DontMoveGhost
-	call MoveGhost
+	call MoveGhosts
 	mov [ghostCounter], 0
+	
 DontMoveGhost:
-	
-	
+	cmp [freeze], 1
+	jne AfterFreezePart
+	call MoveGhosts
+	inc [freezeCounter]
+	cmp [freezeCounter], 100
+	jne AfterFreezePart
+	;freeze counter = 100
+	mov [freeze], 0
+	mov [freezeCounter], 0
+AfterFreezePart:
+	cmp [cont], 1
+	jne Ending
 	mov ah, 1
 	int 16h
 	jz MainLoop
@@ -154,6 +173,9 @@ proc Restart
 	mov [xGhost], 130
 	mov [yGhost], 80
 	mov [ghostCounter], 1
+	mov [eaten], 0
+	mov [freeze], 0
+	mov [freezeCounter], 0
 	call Background
 	ret
 endp Restart
@@ -260,21 +282,30 @@ endp EndScreen
 ;===========================
 proc AreTouching
 	push ax
+	cmp [eaten], 1
+	je @@ExitProc
 	mov ax, [x]
 	sub ax, [xGhost]
-	cmp ax, 8
+	cmp ax, 9
 	jnl @@ExitProc
-	cmp ax, -8
+	cmp ax, -9
 	jng @@ExitProc
 	
 	mov ax, [y]
 	sub ax, [yGhost]
-	cmp ax, 8
+	cmp ax, 9
 	jnl @@ExitProc
-	cmp ax, -8
+	cmp ax, -9
 	jng @@ExitProc
 	;if we got until here they are touching
+	cmp [freeze], 1
+	je @@EatGhost
 	mov [cont], 0
+	jmp @@ExitProc
+@@EatGhost:
+	add [score], 200
+	mov [eaten], 1
+	call DeleteGhost
 @@ExitProc:
 	pop ax
 	ret
@@ -547,22 +578,58 @@ endp Background
 ;---------------------
 ;---------------------
 ;---------------------
-
-
-
 ;===========================
-;description - call the correct move ghost acoording to pacman position. if the ghost is stuck in a wall decide randomly on the next direction
-;input - put in bx ghost nubmer
+;description - calls all the move ghosts command
+;input - put in bx ghost number
 ;output - screen
 ;variables - x,y, 
 ;===========================
-proc MoveGhost
+proc MoveGhosts
+	cmp [eaten], 1
+	je @@RedEaten
+	call MoveRedGhost
+	jmp @@Exit
+@@RedEaten:
+	call DeleteGhost
+@@Exit:
+	ret
+endp MoveGhosts
+
+;===========================
+;description - call the correct move ghost acoording to pacman position. if the ghost is stuck in a wall decide randomly on the next direction
+;input - none
+;output - screen
+;variables - x,y, 
+;===========================
+proc MoveRedGhost
 	push ax
 	push bx
 	push cx
 	push dx
 	push di
 	
+	cmp [freeze], 1
+	jne @@NormalBehavour
+	;freezed ghost:
+	mov [FileName], 'g'
+    mov [FileName + 1], 'f'
+	mov al, [dirGhost]
+	mov [FileName + 2], al
+    mov [FileName + 3], '.'
+    mov [FileName + 4], 'b'
+    mov [FileName + 5], 'm'
+    mov [FileName + 6], 'p'
+	push ax
+	mov ax, [xGhost]
+	mov [BmpLeft], ax
+	mov ax, [yGhost]
+    mov [BmpTop], ax
+	pop ax
+    mov [BmpColSize], 8
+    mov [BmpRowSize], 8
+    call Bmp
+	jmp @@Exit
+@@NormalBehavour:
 	;back up the background before drawing ghost
 	call FindLocation
 	mov di ,ax
@@ -622,7 +689,7 @@ proc MoveGhost
 	pop bx
 	pop ax
 	ret 
-endp MoveGhost
+endp MoveRedGhost
 
 
 
