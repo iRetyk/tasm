@@ -32,7 +32,7 @@ DATASEG
 	NewBestScoreString db "New Best Score!!!! $"
 	PlayAgain db "Press enter to play again$"
 	PlayAgainPart2 db "Press esc to exit$"
-	Matrix db 64 dup (?) 
+	Matrix db 64 dup (0)
 	matrixOffset dw offset Matrix
 	RndCurrentPos dw start
 	
@@ -323,14 +323,15 @@ endp AreTouching
 ;output - ax
 ;variables - none
 ;===========================
-proc FindLocation; changes xy cooardinates to a 1-64000
+proc FindLocation 
     push bx
-    xor bx, bx
+	push dx
     mov bx,[yGhost]
-    dec bx
+    inc bx
     mov ax,320
     mul bx
     add ax, [xGhost]
+	pop dx
     pop bx
     ret
 endp FindLocation
@@ -341,6 +342,7 @@ endp FindLocation
 ; Output:        On screen
 ;=================	
 proc PutMatrixInData
+	
 	push es
 	push ax
 	push si
@@ -386,7 +388,7 @@ endp PutMatrixInData
 
 ;==================
 ; Description  : Print a Matrix from memory into Screen.
-; Input        : 1. dx = Line Length, cx = Amount of Lines, Variable matrix = Offset of the matrix you want to print, DI = Location to Print on screen(0 - 64,000)
+; Input        : 1. dx = Line Length, cx = Amount of Lines, Variable matrixOffset = Offset of the matrix you want to print, di = Location to Print on screen(0 - 64,000)
 ; Output:        On screen
 ;=================
 proc PutMatrixInScreen
@@ -631,12 +633,12 @@ proc MoveRedGhost
 	jmp @@Exit
 @@NormalBehavour:
 	;back up the background before drawing ghost
-	call FindLocation
-	mov di ,ax
-	mov cx, 8
-	mov dx, 8
-	call PutMatrixInData
-	mov ah, 0
+	; call FindLocation
+	; mov di ,ax
+	; mov cx, 8
+	; mov dx, 8
+	; call PutMatrixInData
+	; mov ah, 0
 
 	
 	mov ax, [xGhost]
@@ -700,25 +702,25 @@ endp MoveRedGhost
 ;variables - x,y, 
 ;===========================
 proc DeleteGhost
-	; push ax
-	; push di
-	; push cx
-	; push dx
-	; mov dx, 9
-	; mov cx, 8
-	; call FindLocation
-	; mov di, ax
-	; call PutMatrixInScreen
-	; pop dx
-	; pop cx
-	; pop di
-	; pop ax
-	push [xGhost]
-	push [yGhost]
-	push 9
-	push 8
-	push 0
-	call DrawFullRect
+	push ax
+	push di
+	push cx
+	push dx
+	call FindLocation
+	mov di, ax
+	mov dx, 8
+	mov cx, 8
+	call PutMatrixInScreen
+	pop dx
+	pop cx
+	pop di
+	pop ax
+	; push [xghost]
+	; push [yghost]
+	; push 9
+	; push 8
+	; push 0
+	; call drawfullrect
 	ret 
 endp DeleteGhost
 
@@ -756,7 +758,6 @@ proc MoveGhostRight
 	add di, 8
 	mov si, [yGhost]
 	mov cx, 8
-	mov bx, 0
 	@@Line: ;this loop checks if the next line is clear 
 		push di
 		push si
@@ -771,19 +772,28 @@ proc MoveGhostRight
 			mov [stuck] ,1
 			jmp @@Exit
 		@@Fruit:
-			;back up the background before drawing ghost
-			; push offset matrix
-			; call FindLocation
-			; push ax
-			; push 8
-			; push 8
-			; call PutMatrixInData
+			
 		@@Black:
 			inc si
 			loop @@Line
-	call DeleteGhost
+
+	call DeleteGhost	
 	inc [xGhost]
 	inc [BmpLeft]
+	
+	;back up the background before drawing ghost
+	call FindLocation
+	push di
+	push cx
+	push dx
+	mov di, ax
+	mov cx, 8
+	mov dx, 8
+	call PutMatrixInData
+	pop dx
+	pop cx
+	pop di
+			
 	call Bmp
 @@Exit:
 	pop si
@@ -824,7 +834,10 @@ proc MoveGhostLeft
 	mov di, [xGhost]
 	dec di
 	mov si, [yGhost]
-	mov cx, 8
+	mov cx, 8			
+	
+	
+	
 	@@Line: ;this loop checks if the next line is clear 
 		push di
 		push si
@@ -839,19 +852,25 @@ proc MoveGhostLeft
 			mov [stuck] ,1
 			jmp @@Exit
 		@@Fruit:
-			;back up the background before drawing ghost
-			; push offset matrix
-			; call FindLocation
-			; push ax
-			; push 8
-			; push 8
-			; call PutMatrixInData
+			
 		@@Black:
 			inc si
 			loop @@Line
-	call DeleteGhost
+	call DeleteGhost ;putmatrix in screen
 	dec [xGhost]
 	dec [BmpLeft]
+	;back up the background before drawing ghost
+	call FindLocation
+	push di
+	push cx
+	push dx
+	mov di, ax
+	mov cx, 8
+	mov dx, 8
+	call PutMatrixInData
+	pop dx
+	pop cx
+	pop di
 	call Bmp
 @@Exit:
 	pop si
@@ -909,13 +928,24 @@ proc MoveGhostDown
 			je @@Black
 			jmp @@Exit
 		@@Fruit:
-			;yavor's proc
 		@@Black:
 			inc si
 			loop @@Line
-	call DeleteGhost
+	call DeleteGhost ;putmatrix in screen
 	inc [yGhost]
 	inc [BmpTop]
+	;back up background before drawing ghost
+	call FindLocation
+	push di
+	push cx
+	push dx
+	mov di, ax
+	mov cx, 8
+	mov dx, 8
+	call PutMatrixInData
+	pop dx
+	pop cx
+	pop di
 	call Bmp
 @@Exit:
 	pop si
@@ -958,6 +988,10 @@ proc MoveGhostUp
 	mov si, [xGhost]
 	mov cx, 8
 	mov bx, 0
+
+
+	
+	
 	@@Line: ;this loop checks if the next line is clear 
 		push si
 		push di
@@ -971,13 +1005,25 @@ proc MoveGhostUp
 			je @@Black
 			jmp @@Exit
 		@@Fruit:
-			;yavor's proc
+		
 		@@Black:
 			inc si
 			loop @@Line
 	call DeleteGhost
 	dec [yGhost]
 	dec [BmpTop]
+	;back up background before drawing ghost
+	call FindLocation
+	push di
+	push cx
+	push dx
+	mov di, ax
+	mov cx, 8
+	mov dx, 8
+	call PutMatrixInData
+	pop dx
+	pop cx
+	pop di
 	call Bmp
 @@Exit:
 	pop si
