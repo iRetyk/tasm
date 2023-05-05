@@ -165,6 +165,10 @@ exit:
 ;variables - none
 ;===========================
 proc Restart
+	push cx
+	push si
+
+	
 	mov [cont], 1
 	mov [x], 8
 	mov [y], 10
@@ -177,6 +181,14 @@ proc Restart
 	mov [freeze], 0
 	mov [freezeCounter], 0
 	call Background
+	mov cx, 63
+	xor si, si
+@@DeleteMat:
+	mov [Matrix + si], 0
+	inc si
+loop @@DeleteMat
+	pop si
+	pop cx
 	ret
 endp Restart
 
@@ -632,14 +644,7 @@ proc MoveRedGhost
     call Bmp
 	jmp @@Exit
 @@NormalBehavour:
-	;back up the background before drawing ghost
-	; call FindLocation
-	; mov di ,ax
-	; mov cx, 8
-	; mov dx, 8
-	; call PutMatrixInData
-	; mov ah, 0
-
+	
 	
 	mov ax, [xGhost]
 	cmp ax, [x]
@@ -1485,8 +1490,9 @@ endp Delay100ms
 ;variables - FileName, BmpLeft, BmpTop, BmpColSize, BmpRowSize
 ;===========================
 proc Bmp
-	
-	
+	push dx
+	push si
+	push ax
 	
 	
 	mov dx, offset FileName
@@ -1509,14 +1515,9 @@ proc Bmp
 	
 @@exit:
 	
-	; mov ah,7
-	; int 21h
-	
-
-
-	
-	
-	
+	pop ax
+	pop si
+	pop dx	
     ret
 endp Bmp
 
