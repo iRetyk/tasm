@@ -32,8 +32,9 @@ DATASEG
 	NewBestScoreString db "New Best Score!!!! $"
 	PlayAgain db "Press enter to play again$"
 	PlayAgainPart2 db "Press esc to exit$"
-	Matrix db 64 dup (0)
-	matrixOffset dw offset Matrix
+	RedMatrix db 64 dup (0)
+	PurpleMatrix db 64 dup (0)
+	matrixOffset dw offset RedMatrix, PurpleMatrix
 	RndCurrentPos dw start
 	
 	;<packman data>
@@ -49,13 +50,14 @@ DATASEG
 	;</packman data>
 	
 	;<ghosts data>
-	xGhost dw 130 ;head x
-	yGhost dw 80 ;head y
-	dirGhost db '2' ; '1' - right, '2' - left
+	;because there is more than one ghost the stats that are ghost specific are arrays of word for simplisty
+	xGhost dw 130, 120 ;head x
+	yGhost dw 80, 80 ;head y
+	dirGhost dw '2', '2' ; '1' - right, '2' - left
 	ghostCounter db 1 ;when hits 2 ghost will move
 	stuck db 0 ;bool var represesnts if the ghost is stuck in a wall
 	freeze db 0 ;bool var represesnting if the ghost need to freeze
-	eaten db 0;bool
+	eaten dw 0, 0;bool
 	;</ghosts data>
 	
 CODESEG
@@ -176,17 +178,28 @@ proc Restart
 	mov [score], 0
 	mov [xGhost], 130
 	mov [yGhost], 80
+	mov [xGhost + 2], 120
+	mov [yGhost + 2], 80
 	mov [ghostCounter], 1
 	mov [eaten], 0
+	mov [eaten + 2], 0
 	mov [freeze], 0
 	mov [freezeCounter], 0
 	call Background
 	mov cx, 63
 	xor si, si
-@@DeleteMat:
-	mov [Matrix + si], 0
+@@DeleteRedMat:
+	mov [RedMatrix + si], 0
 	inc si
-loop @@DeleteMat
+loop @@DeleteRedMat
+
+	mov cx, 63
+	xor si, si
+@@DeletePurpleMat:
+	mov [RedMatrix + si], 0
+	inc si
+loop @@DeletePurpleMat
+
 	pop si
 	pop cx
 	ret
@@ -287,38 +300,50 @@ endp EndScreen
 
 
 ;===========================
-;description - checks if the pacman and the ghost are touching 
+;description - checks if the pacman and the ghosts are touching 
 ;input - none
 ;output - if touching ->cont = 0
 ;variables - none
 ;===========================
 proc AreTouching
 	push ax
-	cmp [eaten], 1
-	je @@ExitProc
+	push si
+	mov si, -2
+@@NextGhost:
+	add si, 2 ;next ghost
+	cmp si, 4
+	je @@ExitProc ;if si = 4 we finished checking both ghosts
+	
+	cmp [eaten + si], 1
+	je @@NextGhost
+
 	mov ax, [x]
-	sub ax, [xGhost]
+	sub ax, [xGhost + si]
 	cmp ax, 9
-	jnl @@ExitProc
+	jnl @@NextGhost
 	cmp ax, -9
-	jng @@ExitProc
+	jng @@NextGhost
 	
 	mov ax, [y]
-	sub ax, [yGhost]
+	sub ax, [yGhost + si]
 	cmp ax, 9
-	jnl @@ExitProc
+	jnl @@NextGhost
 	cmp ax, -9
-	jng @@ExitProc
+	jng @@NextGhost
+	
 	;if we got until here they are touching
 	cmp [freeze], 1
 	je @@EatGhost
 	mov [cont], 0
-	jmp @@ExitProc
+	jmp @@NextGhost
 @@EatGhost:
 	add [score], 200
-	mov [eaten], 1
+	mov [eaten + si], 1
 	call DeleteGhost
+	jmp @@NextGhost
+	
 @@ExitProc:
+	pop si
 	pop ax
 	ret
 endp AreTouching
@@ -331,26 +356,26 @@ endp AreTouching
 
 ;===========================
 ;description - changes the cooardinates of the ghost to one number between 1 -64000
-;input - xGhost y GHost
+;input - xGhost yGhost, bx = ghost number * 2
 ;output - ax
 ;variables - none
 ;===========================
 proc FindLocation 
-    push bx
+    push cx
 	push dx
-    mov bx,[yGhost]
-    inc bx
+    mov cx,[yGhost + bx]
+    inc cx
     mov ax,320
-    mul bx
-    add ax, [xGhost]
+    mul cx
+    add ax, [xGhost + bx]
 	pop dx
-    pop bx
+    pop cx
     ret
 endp FindLocation
 
 ;==================
 ; Description  : copies a matrix from screen to ds
-; Input        : 1. dx = Line Length, cx = Amount of Lines, Variable matrix = Offset of the matrix you want to print, DI = Location to Print on screen(0 - 64,000)
+; Input        : 1. dx = Line Length, cx = Amount of Lines, Variable matrix = Offset of the matrix you want to print, DI = Location to Print on screen(0 - 64,000), bx = ghost nubmer * 2
 ; Output:        On screen
 ;=================	
 proc PutMatrixInData
@@ -369,7 +394,7 @@ proc PutMatrixInData
 	mov bp,ax
 	pop dx
 
-	mov si,[matrixOffset]
+	mov si,[matrixOffset + bx]
 
 @@NextRow:	
 
@@ -400,7 +425,7 @@ endp PutMatrixInData
 
 ;==================
 ; Description  : Print a Matrix from memory into Screen.
-; Input        : 1. dx = Line Length, cx = Amount of Lines, Variable matrixOffset = Offset of the matrix you want to print, di = Location to Print on screen(0 - 64,000)
+; Input        : 1. dx = Line Length, cx = Amount of Lines, Variable matrixOffset = Offset of the matrix you want to print, di = Location to Print on screen(0 - 64,000), bx = ghsot number * 2
 ; Output:        On screen
 ;=================
 proc PutMatrixInScreen
@@ -413,7 +438,7 @@ proc PutMatrixInScreen
 	cld ; for movsb direction si --> di
 	
 	
-	mov si,[matrixOffset]
+	mov si,[matrixOffset + bx]
 	
 @@NextRow:	
 	push cx
@@ -592,25 +617,49 @@ endp Background
 ;---------------------
 ;---------------------
 ;---------------------
+
+
+
+
 ;===========================
-;description - calls all the move ghosts command
-;input - put in bx ghost number
+;description - calls all the move ghosts command if they aren't eaten
+;input - bx = ghost number * 2
 ;output - screen
 ;variables - x,y, 
 ;===========================
 proc MoveGhosts
+	push bx
 	cmp [eaten], 1
 	je @@RedEaten
 	call MoveRedGhost
+	
+@@CheckPurple:
+	cmp [eaten + 2], 1
+	je @@PurpleEaten
+	call MovePurpleGhost
+	
 	jmp @@Exit
+	
 @@RedEaten:
+	mov bx, 0
 	call DeleteGhost
+	jmp @@CheckPurple
+	
+@@PurpleEaten:
+	mov bx, 2
+	call DeleteGhost
+	jmp @@Exit
+
 @@Exit:
+	pop bx
 	ret
 endp MoveGhosts
 
+
+
+
 ;===========================
-;description - call the correct move ghost acoording to pacman position. if the ghost is stuck in a wall decide randomly on the next direction
+;description - call the correct move ghost acoording to pacman position. if the ghost is stuck in a wall decide randomly on the next direction. this is the algorithm for the red ghost
 ;input - none
 ;output - screen
 ;variables - x,y, 
@@ -627,7 +676,7 @@ proc MoveRedGhost
 	;freezed ghost:
 	mov [FileName], 'g'
     mov [FileName + 1], 'f'
-	mov al, [dirGhost]
+	mov ax, [dirGhost]
 	mov [FileName + 2], al
     mov [FileName + 3], '.'
     mov [FileName + 4], 'b'
@@ -651,11 +700,13 @@ proc MoveRedGhost
 	je @@Stuck
 	ja @@Left
 	@@Right:
+	mov bx, 0 ;ghost number
 	call MoveGhostRight
 	cmp [stuck], 1
 	je @@Stuck
 	jmp @@Cont
 @@Left:
+	mov bx, 0 ;ghost number
 	call MoveGhostLeft
 	cmp [stuck], 1
 	je @@Stuck
@@ -665,11 +716,13 @@ proc MoveRedGhost
 	cmp ax, [y]
 	ja @@Up
 	@@Down:
+	mov bx, 0 ;ghost number
 	call MoveGhostDown
 	cmp [stuck], 1
 	je @@Stuck
 	jmp @@Exit
 @@Up:
+	mov bx, 0 ;ghost number
 	call MoveGhostUp
 	cmp [stuck], 1
 	je @@Stuck
@@ -700,9 +753,27 @@ endp MoveRedGhost
 
 
 
+
+;===========================
+;description - call the correct move ghost randomly.this is the algorithm for the purple ghost
+;input - none
+;output - screen
+;variables - x,y, 
+;===========================
+proc MovePurpleGhost
+	
+	ret 
+endp MovePurpleGhost
+
+
+
+
+
+
+
 ;===========================
 ;description - deletes ghost
-;input - put in bx ghost nubmer
+;input - bx = ghsot number * 2
 ;output - screen
 ;variables - x,y, 
 ;===========================
@@ -734,34 +805,41 @@ endp DeleteGhost
 
 ;===========================
 ;description - moves ghost right with animation
-;input - put in bx ghost nubmer
+;input - bx = ghsot number * 2
 ;output - screen
 ;variables - x,y, 
 ;===========================
 proc MoveGhostRight
-	mov [dirGhost], '1'
+	mov [dirGhost + bx], '1'
 	
 	mov [FileName], 'g'
-    mov [FileName + 1], '1'
+	
+	push ax
+	xor ah, ah
+	mov al, bl
+	add al, '1'
+    mov [FileName + 1], al
+	
     mov [FileName + 2], '.'
     mov [FileName + 3], 'b'
     mov [FileName + 4], 'm'
     mov [FileName + 5], 'p'
-	push ax
-	mov ax, [xGhost]
+	
+	mov ax, [xGhost + bx]
 	mov [BmpLeft], ax
-	mov ax, [yGhost]
+	mov ax, [yGhost + bx]
     mov [BmpTop], ax
 	pop ax
+	
     mov [BmpColSize], 8
     mov [BmpRowSize], 8
     call Bmp
 
 	push di
 	push si
-	mov di, [xGhost]
+	mov di, [xGhost + bx]
 	add di, 8
-	mov si, [yGhost]
+	mov si, [yGhost + bx]
 	mov cx, 8
 	@@Line: ;this loop checks if the next line is clear 
 		push di
@@ -782,8 +860,9 @@ proc MoveGhostRight
 			inc si
 			loop @@Line
 
-	call DeleteGhost	
-	inc [xGhost]
+	call DeleteGhost
+	
+	inc [xGhost + bx]
 	inc [BmpLeft]
 	
 	;back up the background before drawing ghost
@@ -811,37 +890,42 @@ endp MoveGhostRight
 
 ;===========================
 ;description - moves ghost left
-;input - put in bx ghost nubmer
+;input - bx = ghost number * 2
 ;output - screen
 ;variables - x,y, 
 ;===========================
 proc MoveGhostLeft	
-	mov [dirGhost], '2'
+	
+	mov [dirGhost + bx], '2'
 	
 	mov [FileName], 'g'
-    mov [FileName + 1], '2'
+	
+	push ax
+	xor ah, ah
+	mov al, bl
+	add al, '2'
+    mov [FileName + 1], al
+	
     mov [FileName + 2], '.'
     mov [FileName + 3], 'b'
     mov [FileName + 4], 'm'
     mov [FileName + 5], 'p'
-	push ax
-	mov ax, [xGhost]
+	mov ax, [xGhost + bx]
 	mov [BmpLeft], ax
-	mov ax, [yGhost]
+	mov ax, [yGhost + bx]
     mov [BmpTop], ax
 	pop ax
+	
     mov [BmpColSize], 8
     mov [BmpRowSize], 8
     call Bmp
 
 	push di
 	push si
-	mov di, [xGhost]
+	mov di, [xGhost + bx]
 	dec di
-	mov si, [yGhost]
+	mov si, [yGhost + bx]
 	mov cx, 8			
-	
-	
 	
 	@@Line: ;this loop checks if the next line is clear 
 		push di
@@ -861,9 +945,12 @@ proc MoveGhostLeft
 		@@Black:
 			inc si
 			loop @@Line
+	
+	
 	call DeleteGhost ;putmatrix in screen
-	dec [xGhost]
+	dec [xGhost + bx]
 	dec [BmpLeft]
+	
 	;back up the background before drawing ghost
 	call FindLocation
 	push di
@@ -876,10 +963,12 @@ proc MoveGhostLeft
 	pop dx
 	pop cx
 	pop di
+	
 	call Bmp
 @@Exit:
 	pop si
 	pop di
+	
 	ret
 
 endp MoveGhostLeft
@@ -889,23 +978,25 @@ endp MoveGhostLeft
 
 ;===========================
 ;description - moves ghost down
-;input - put in bx ghost nubmer
+;input - bx = ghost number
 ;output - screen
 ;variables - x,y, 
 ;===========================
 proc MoveGhostDown
 	push ax
+	xor ah, ah
 	
 	mov [FileName], 'g'
-	mov al, [dirGhost]
+	mov ax, [dirGhost]
+	add ax, bx
     mov [FileName + 1], al
     mov [FileName + 2], '.'
     mov [FileName + 3], 'b'
     mov [FileName + 4], 'm'
     mov [FileName + 5], 'p'
-	mov ax, [xGhost]
+	mov ax, [xGhost + bx]
 	mov [BmpLeft], ax
-	mov ax, [yGhost]
+	mov ax, [yGhost + bx]
     mov [BmpTop], ax
     mov [BmpColSize], 8
     mov [BmpRowSize], 8
@@ -915,11 +1006,10 @@ proc MoveGhostDown
 	
 	push di
 	push si
-	mov di, [yGhost]
+	mov di, [yGhost + bx]
 	add di, 9
-	mov si, [xGhost]
+	mov si, [xGhost + bx]
 	mov cx, 8
-	mov bx, 0
 	@@Line: ;this loop checks if the next line is clear 
 		push si
 		push di
@@ -937,8 +1027,9 @@ proc MoveGhostDown
 			inc si
 			loop @@Line
 	call DeleteGhost ;putmatrix in screen
-	inc [yGhost]
+	inc [yGhost + bx]
 	inc [BmpTop]
+	
 	;back up background before drawing ghost
 	call FindLocation
 	push di
@@ -951,6 +1042,7 @@ proc MoveGhostDown
 	pop dx
 	pop cx
 	pop di
+	
 	call Bmp
 @@Exit:
 	pop si
@@ -969,17 +1061,19 @@ endp MoveGhostDown
 ;===========================
 proc MoveGhostUp
 	push ax
+	xor ah, ah
 	
 	mov [FileName], 'g'
-    mov al, [dirGhost]
+    mov ax, [dirGhost]
+	add ax, bx
     mov [FileName + 1], al
     mov [FileName + 2], '.'
     mov [FileName + 3], 'b'
     mov [FileName + 4], 'm'
     mov [FileName + 5], 'p'
-	mov ax, [xGhost]
+	mov ax, [xGhost + bx]
 	mov [BmpLeft], ax
-	mov ax, [yGhost]
+	mov ax, [yGhost + bx]
     mov [BmpTop], ax
 	pop ax
     mov [BmpColSize], 8
@@ -988,14 +1082,10 @@ proc MoveGhostUp
 
 	push di
 	push si
-	mov di, [yGhost]
+	mov di, [yGhost + bx]
 	dec di
-	mov si, [xGhost]
-	mov cx, 8
-	mov bx, 0
-
-
-	
+	mov si, [xGhost + bx]
+	mov cx, 8	
 	
 	@@Line: ;this loop checks if the next line is clear 
 		push si
@@ -1015,8 +1105,9 @@ proc MoveGhostUp
 			inc si
 			loop @@Line
 	call DeleteGhost
-	dec [yGhost]
+	dec [yGhost + bx]
 	dec [BmpTop]
+	
 	;back up background before drawing ghost
 	call FindLocation
 	push di
@@ -1029,6 +1120,7 @@ proc MoveGhostUp
 	pop dx
 	pop cx
 	pop di
+	
 	call Bmp
 @@Exit:
 	pop si
@@ -1490,6 +1582,7 @@ endp Delay100ms
 ;variables - FileName, BmpLeft, BmpTop, BmpColSize, BmpRowSize
 ;===========================
 proc Bmp
+	push bx
 	push dx
 	push si
 	push ax
@@ -1518,6 +1611,7 @@ proc Bmp
 	pop ax
 	pop si
 	pop dx	
+	pop bx
     ret
 endp Bmp
 
