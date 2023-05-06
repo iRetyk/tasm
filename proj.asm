@@ -39,7 +39,7 @@ DATASEG
 	PeachColor db ? ; "-"
 	RedMatrix db 64 dup (0)
 	PurpleMatrix db 64 dup (0)
-	matrixOffset dw offset RedMatrix, PurpleMatrix
+	matrixOffset dw offset RedMatrix, offset PurpleMatrix
 	RndCurrentPos dw start
 	
 	;<packman data>
@@ -175,9 +175,7 @@ exit:
 ;variables - none
 ;===========================
 proc Restart
-	push cx
-	push si
-
+	push bx
 	
 	mov [cont], 1
 	mov [x], 8
@@ -194,22 +192,12 @@ proc Restart
 	mov [freeze], 0
 	mov [freezeCounter], 0
 	call Background
-	mov cx, 63
-	xor si, si
-@@DeleteRedMat:
-	mov [RedMatrix + si], 0
-	inc si
-loop @@DeleteRedMat
-
-	mov cx, 63
-	xor si, si
-@@DeletePurpleMat:
-	mov [RedMatrix + si], 0
-	inc si
-loop @@DeletePurpleMat
-
-	pop si
-	pop cx
+	mov bx, 0
+	call DeleteMatrix
+	mov bx, 2
+	call DeleteMatrix
+	
+	pop bx
 	ret
 endp Restart
 
@@ -315,25 +303,25 @@ endp EndScreen
 ;===========================
 proc AreTouching
 	push ax
-	push si
-	mov si, -2
+	push bx
+	mov bx, -2
 @@NextGhost:
-	add si, 2 ;next ghost
-	cmp si, 4
-	je @@ExitProc ;if si = 4 we finished checking both ghosts
+	add bx, 2 ;next ghost
+	cmp bx, 4
+	je @@ExitProc ;if bx = 4 we finished checking both ghosts
 	
-	cmp [eaten + si], 1
+	cmp [eaten + bx], 1
 	je @@NextGhost
 
 	mov ax, [x]
-	sub ax, [xGhost + si]
+	sub ax, [xGhost + bx]
 	cmp ax, 9
 	jnl @@NextGhost
 	cmp ax, -9
 	jng @@NextGhost
 	
 	mov ax, [y]
-	sub ax, [yGhost + si]
+	sub ax, [yGhost + bx]
 	cmp ax, 9
 	jnl @@NextGhost
 	cmp ax, -9
@@ -345,16 +333,40 @@ proc AreTouching
 	mov [cont], 0
 	jmp @@NextGhost
 @@EatGhost:
-	add [score], 200
-	mov [eaten + si], 1
+	add [score], 250
+	mov [eaten + bx], 1
+	call DeleteMatrix
 	call DeleteGhost
 	jmp @@NextGhost
 	
 @@ExitProc:
-	pop si
+	pop bx
 	pop ax
 	ret
 endp AreTouching
+
+
+
+
+;===========================
+;description - deletes all the cells of an 8*8 matrix
+;input - bx = ghost number * 2
+;output - ax
+;variables - none
+;===========================
+proc DeleteMatrix
+	push si
+	push cx
+	mov si, [matrixOffset + bx]
+	mov cx, 63
+@@DeleteMat:
+	mov [ds:si], 0
+	inc si
+loop @@DeleteMat
+	pop cx
+	pop si
+	ret
+endp DeleteMatrix
 
 
 
@@ -381,9 +393,13 @@ proc FindLocation
     ret
 endp FindLocation
 
+
+
+
+
 ;==================
 ; Description  : copies a matrix from screen to ds
-; Input        : 1. dx = Line Length, cx = Amount of Lines, Variable matrix = Offset of the matrix you want to print, DI = Location to Print on screen(0 - 64,000), bx = ghost nubmer * 2
+; Input        : 1. dx = Line Length, cx = Amount of Lines, Variable matrixOffset = Offset of the matrix you want to print, DI = Location to Print on screen(0 - 64,000), bx = ghost nubmer * 2
 ; Output:        On screen
 ;=================	
 proc PutMatrixInData
