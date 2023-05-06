@@ -23,15 +23,20 @@ DATASEG
 	BmpRowSize dw ?
 	;</Bmp File data>
 	
+	
+	
+	;<strings>
 	New_Line db 10, 13, '$' ;used in proc - NewLine
-	FruitColor db ? ;holds the color of the fruit according to the Palette
-	PeachColor db ? ; "-"
 	BestString db "Best:$"
 	BestScoreString db "Best "
 	ScoreString db "Score:$"
 	NewBestScoreString db "New Best Score!!!! $"
 	PlayAgain db "Press enter to play again$"
 	PlayAgainPart2 db "Press esc to exit$"
+	;</strings>
+	
+	FruitColor db ? ;holds the color of the fruit according to the Palette
+	PeachColor db ? ; "-"
 	RedMatrix db 64 dup (0)
 	PurpleMatrix db 64 dup (0)
 	matrixOffset dw offset RedMatrix, PurpleMatrix
@@ -51,13 +56,16 @@ DATASEG
 	
 	;<ghosts data>
 	;because there is more than one ghost the stats that are ghost specific are arrays of word for simplisty
-	xGhost dw 130, 120 ;head x
+	xGhost dw 120, 130 ;head x
 	yGhost dw 80, 80 ;head y
 	dirGhost dw '2', '2' ; '1' - right, '2' - left
 	ghostCounter db 1 ;when hits 2 ghost will move
-	stuck db 0 ;bool var represesnts if the ghost is stuck in a wall
+	stuck dw 0, 0;bool var represesnts if the ghost is stuck in a wall
 	freeze db 0 ;bool var represesnting if the ghost need to freeze
 	eaten dw 0, 0;bool
+	;purple ghost movemnet 
+	purpleGhostCounter db 0
+	purpleGhostDireciton db 3;(0-3) right, down, left , up
 	;</ghosts data>
 	
 CODESEG
@@ -96,9 +104,9 @@ DontMoveGhost:
 	jne AfterFreezePart
 	call MoveGhosts
 	inc [freezeCounter]
-	cmp [freezeCounter], 100
+	cmp [freezeCounter], 200
 	jne AfterFreezePart
-	;freeze counter = 100
+	;freeze counter = 200
 	mov [freeze], 0
 	mov [freezeCounter], 0
 AfterFreezePart:
@@ -176,9 +184,9 @@ proc Restart
 	mov [y], 10
 	mov [direction], 0
 	mov [score], 0
-	mov [xGhost], 130
+	mov [xGhost], 120
 	mov [yGhost], 80
-	mov [xGhost + 2], 120
+	mov [xGhost + 2], 130
 	mov [yGhost + 2], 80
 	mov [ghostCounter], 1
 	mov [eaten], 0
@@ -673,7 +681,8 @@ proc MoveRedGhost
 	
 	cmp [freeze], 1
 	jne @@NormalBehavour
-	;freezed ghost:
+	
+	;freeze ghost:
 	mov [FileName], 'g'
     mov [FileName + 1], 'f'
 	mov ax, [dirGhost]
@@ -761,7 +770,95 @@ endp MoveRedGhost
 ;variables - x,y, 
 ;===========================
 proc MovePurpleGhost
+	push ax
+	push bx
 	
+	cmp [freeze], 1
+	jne @@NormalBehavour
+	
+	;freeze ghost:
+	mov [FileName], 'g'
+    mov [FileName + 1], 'f'
+	mov ax, [dirGhost]
+	mov [FileName + 2], al
+    mov [FileName + 3], '.'
+    mov [FileName + 4], 'b'
+    mov [FileName + 5], 'm'
+    mov [FileName + 6], 'p'
+	push ax
+	mov ax, [xGhost + 2]
+	mov [BmpLeft], ax
+	mov ax, [yGhost + 2]
+    mov [BmpTop], ax
+	pop ax
+    mov [BmpColSize], 8
+    mov [BmpRowSize], 8
+    call Bmp
+	jmp @@Exit
+	
+@@NormalBehavour:
+	cmp [stuck + 2], 1
+	je @@Stuck ;if ghost stuck in a wall change direciton
+	cmp [purpleGhostCounter] , 10 
+	jne @@MoveGhost ;only change direciton after ghost moved 10 times
+	mov [stuck + 2], 0
+	mov [purpleGhostCounter], 0
+	mov bl, 0
+	mov bh, 3
+	call RandomByCs
+	mov [purpleGhostDireciton], al
+@@MoveGhost:
+	inc [purpleGhostCounter]
+	cmp [purpleGhostDireciton], 0
+	je @@Right
+	cmp [purpleGhostDireciton], 1
+	je @@Down
+	cmp [purpleGhostDireciton], 2
+	je @@Left
+	;direction = 3
+	mov bx, 2
+	call MoveGhostUp
+	jmp @@Exit
+
+@@Stuck:
+	mov [stuck + 2], 0
+	;change direciton on the other axis. for example if ghost moved up and than got stuck in a wall move right or left
+	mov bl, 0
+	mov bh, 1
+	call RandomByCs
+		cmp al, 0
+		je @@RemoveOne
+		inc [purpleGhostDireciton]
+		jmp @@Modulo
+	@@RemoveOne:
+		dec [purpleGhostDireciton]
+	@@Modulo: ;does modulo by 4
+			cmp [purpleGhostDireciton], 0
+			jae @@NonNegative
+			add [purpleGhostDireciton], 4
+			jmp @@MoveGhost
+		@@NonNegative:
+			cmp [purpleGhostDireciton], 4
+			jb @@MoveGhost ;direction is between 0 - 3
+			sub [purpleGhostDireciton], 4
+			jmp @@MoveGhost
+
+@@Right:
+	mov bx, 2
+	call MoveGhostRight
+	jmp @@Exit
+@@Down:
+	mov bx, 2
+	call MoveGhostDown
+	jmp @@Exit
+@@Left:
+	mov bx, 2
+	call MoveGhostLeft
+	jmp @@Exit
+	
+@@Exit:
+	pop bx
+	pop ax
 	ret 
 endp MovePurpleGhost
 
@@ -852,7 +949,7 @@ proc MoveGhostRight
 			je @@Fruit
 			cmp al, 0
 			je @@Black
-			mov [stuck] ,1
+			mov [stuck + bx] ,1
 			jmp @@Exit
 		@@Fruit:
 			
@@ -938,7 +1035,7 @@ proc MoveGhostLeft
 			je @@Fruit
 			cmp al, 0
 			je @@Black
-			mov [stuck] ,1
+			mov [stuck + bx] ,1
 			jmp @@Exit
 		@@Fruit:
 			
@@ -1021,6 +1118,7 @@ proc MoveGhostDown
 			je @@Fruit
 			cmp al, 0
 			je @@Black
+			mov [stuck + bx] ,1
 			jmp @@Exit
 		@@Fruit:
 		@@Black:
@@ -1098,6 +1196,7 @@ proc MoveGhostUp
 			je @@Fruit
 			cmp al, 0
 			je @@Black
+			mov [stuck + bx] ,1
 			jmp @@Exit
 		@@Fruit:
 		
