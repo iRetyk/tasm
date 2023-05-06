@@ -1,5 +1,4 @@
 bin/
 BIN/
-*.EXE
 *.MAP
 *.OBJ
