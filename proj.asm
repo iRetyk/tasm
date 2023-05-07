@@ -51,7 +51,7 @@ DATASEG
 	bestScore dw 0
 	dollar db '$'
 	cont db 1
-	freezeCounter db 0
+	freezeCounter dw 0
 	;</packman data>
 	
 	;<ghosts data>
@@ -104,9 +104,9 @@ DontMoveGhost:
 	jne AfterFreezePart
 	call MoveGhosts
 	inc [freezeCounter]
-	cmp [freezeCounter], 200
+	cmp [freezeCounter], 300
 	jne AfterFreezePart
-	;freeze counter = 200
+	;freeze counter = 300
 	mov [freeze], 0
 	mov [freezeCounter], 0
 AfterFreezePart:
@@ -335,8 +335,8 @@ proc AreTouching
 @@EatGhost:
 	add [score], 250
 	mov [eaten + bx], 1
-	call DeleteMatrix
 	call DeleteGhost
+	call DeleteMatrix
 	jmp @@NextGhost
 	
 @@ExitProc:
