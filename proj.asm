@@ -80,6 +80,8 @@ start:
 	xor ax, ax
 	call Background
 MainLoop:
+	
+
 	call AreTouching
 	
 	call MovePacman
@@ -109,7 +111,12 @@ DontMoveGhost:
 	;freeze counter = 300
 	mov [freeze], 0
 	mov [freezeCounter], 0
+	
 AfterFreezePart:
+
+	cmp [score], 4328 ;pacman ate all the ghosts and the fruirts
+	je Ending
+
 	cmp [cont], 1
 	jne Ending
 	mov ah, 1
@@ -322,7 +329,7 @@ proc AreTouching
 	
 	mov ax, [y]
 	sub ax, [yGhost + bx]
-	cmp ax, 9
+	cmp ax, 10
 	jnl @@NextGhost
 	cmp ax, -9
 	jng @@NextGhost
