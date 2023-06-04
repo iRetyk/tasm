@@ -91,7 +91,6 @@ MainLoop:
 	
 	cmp [freeze], 1
 	je DontMoveGhost
-	inc [freezeCounter]
 	
 	inc [ghostCounter]
 	
@@ -102,15 +101,7 @@ MainLoop:
 	mov [ghostCounter], 0
 	
 DontMoveGhost:
-	cmp [freeze], 1
-	jne AfterFreezePart
-	call MoveGhosts
-	inc [freezeCounter]
-	cmp [freezeCounter], 300
-	jne AfterFreezePart
-	;freeze counter = 300
-	mov [freeze], 0
-	mov [freezeCounter], 0
+	call GhostAreFreezed
 	
 AfterFreezePart:
 
@@ -174,6 +165,32 @@ exit:
 ;---------------------
 ;---------------------
 ;---------------------
+
+;===========================
+;description - takes care of the ghosts when they are freezed
+;input - none
+;output - none
+;variables - none
+;===========================
+proc GhostAreFreezed
+	
+	cmp [freeze], 1
+	jne @@Exit
+	call MoveGhosts
+	inc [freezeCounter]
+	cmp [freezeCounter], 100
+	jne @@Exit
+	;freeze counter = 100
+	mov [freeze], 0
+	mov [freezeCounter], 0
+@@Exit:
+	ret
+endp GhostAreFreezed
+
+
+
+
+
 
 ;===========================
 ;description - restarts all variables
@@ -673,7 +690,6 @@ proc MoveGhosts
 	
 @@RedEaten:
 	mov bx, 0
-	call DeleteGhost
 	jmp @@CheckPurple
 	
 @@PurpleEaten:
