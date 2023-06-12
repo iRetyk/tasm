@@ -33,7 +33,10 @@ DATASEG
 	NewBestScoreString db "New Best Score!!!! $"
 	PlayAgain db "Press enter to play again$"
 	PlayAgainPart2 db "Press esc to exit$"
+	instructions db "Hello! Welcome to Idan's pacman!", 10, 13, 10, 13 ,"How to play:" ,13, 10,"You are the pacman, and you control it with your arrows." ,10, 13, "once you tap an arrow the pacman will move in this direction until you tap", 10, 13, "another arrow", 10, 13,"If you hit a wall the pacman will stop moving." ,10, 13, "every fruit gives you 14 points. If you eat a diamond you gain 56 points and theghosts freeze for a set period.", 10, 13, "During that period you can eat them, gaining 250 points" ,10, 13,10,13, "Press any key to start $"
 	;</strings>
+	
+	
 	
 	FruitColor db ? ;holds the color of the fruit according to the Palette
 	PeachColor db ? ; "-"
@@ -56,7 +59,7 @@ DATASEG
 	
 	;<ghosts data>
 	;because there is more than one ghost the stats that are ghost specific are arrays of word for simplisty
-	xGhost dw 120, 130 ;head x
+	xGhost dw 115, 135 ;head x
 	yGhost dw 80, 80 ;head y
 	dirGhost dw '2', '2' ; '1' - right, '2' - left
 	ghostCounter db 1 ;when hits 2 ghost will move
@@ -76,6 +79,7 @@ start:
 ; Your code here
 ; --------------------------
 	;main
+	call StartGame
 	call SetGraphic
 	xor ax, ax
 	call Background
@@ -105,7 +109,7 @@ DontMoveGhost:
 	
 AfterFreezePart:
 
-	cmp [score], 4328 ;pacman ate all the ghosts and the fruirts
+	cmp [score], 4300 ;pacman ate all the ghosts and the fruirts
 	je Ending
 
 	cmp [cont], 1
@@ -170,7 +174,6 @@ exit:
 ;description - takes care of the ghosts when they are freezed
 ;input - none
 ;output - none
-;variables - none
 ;===========================
 proc GhostAreFreezed
 	
@@ -187,6 +190,32 @@ proc GhostAreFreezed
 	ret
 endp GhostAreFreezed
 
+
+
+;===========================
+;description - show instructions
+;input - none
+;output - screen
+;variables - none
+;===========================
+proc StartGame
+	mov cx, 20
+@@ClearScreen:
+	call NewLine
+loop @@ClearScreen
+
+	mov dx, offset instructions
+	call PrintString
+	
+	mov cx, 10
+@@PushToTop:
+	call NewLine
+loop @@PushToTop
+
+	call InputChar
+
+	ret
+endp StartGame
 
 
 
@@ -671,7 +700,7 @@ endp Background
 
 ;===========================
 ;description - calls all the move ghosts command if they aren't eaten
-;input - bx = ghost number * 2
+;input - none
 ;output - screen
 ;variables - x,y, 
 ;===========================
@@ -694,7 +723,6 @@ proc MoveGhosts
 	
 @@PurpleEaten:
 	mov bx, 2
-	call DeleteGhost
 	jmp @@Exit
 
 @@Exit:
@@ -740,6 +768,7 @@ proc MoveRedGhost
     mov [BmpRowSize], 8
     call Bmp
 	jmp @@Exit
+	
 @@NormalBehavour:
 	
 	
@@ -1358,6 +1387,7 @@ proc MovePacmanRight
     mov [BmpColSize], 8
     mov [BmpRowSize], 8
     call Bmp
+	
 	call Delay100ms
 	call Delay100ms
 
@@ -1367,7 +1397,7 @@ proc MovePacmanRight
 	mov di, [x]
 	add di, 8
 	mov si, [y]
-	mov cx, 8
+	mov cx, 9
 	@@Line: ;this loop checks if the next line is clear 
 		push di
 		push si
@@ -1405,8 +1435,14 @@ proc MovePacmanRight
 			inc si
 			loop @@Line
 	call DeletePacman
-	inc [x]
-	inc [BmpLeft]
+	;checks if pacman is on edge
+		cmp [x], 254
+		jne @@NotEdge
+		mov [x], 0
+		mov [BmpLeft], 0
+	@@NotEdge:
+		inc [x]
+		inc [BmpLeft]
 	inc [filename + 1]
 	call Bmp
 @@Exit:
@@ -1531,7 +1567,7 @@ proc MovePacmanLeft
 	mov di, [x]
 	dec di
 	mov si, [y]
-	mov cx, 8
+	mov cx, 9
 	@@Line: ;this loop checks if the next line is clear 
 		push di
 		push si
@@ -1569,8 +1605,14 @@ proc MovePacmanLeft
 			inc si
 			loop @@Line
 	call DeletePacman
-	dec [x]
-	dec [BmpLeft]
+	;checks if pacman is on edge
+		cmp [x], 1
+		jne @@NotEdge
+		mov [x], 255
+		mov [BmpLeft], 255
+	@@NotEdge:
+		dec [x]
+		dec [BmpLeft]
 	inc [filename + 1]
 	call Bmp
 @@Exit:
@@ -2063,80 +2105,10 @@ proc InputString
 	ret
 endp
 
-;===========================
-;description - Draws a vertical line on the fruit only
-;input -  push in that order: x,y,len,color
-;output - screen
-;variables - none
-;===========================
-proc DrawVerticalLineOnFruit
-
-	push bp
-	mov bp, sp
-	push ax
-	push bx
-	push cx
-	
-	
-	mov bh, 0
-	mov cx, [bp+6]
-@@DrawVertLine:
-	push cx
-	call UpdateFruitColor
-	push [bp + 10]
-	push [bp + 8]
-	call PixelColor
-	cmp al, [FruitColor]
-	jne @@Skip
-	mov cx, [bp+10]
-	mov dx, [bp+8]
-	mov al, [bp+4]
-	mov ah, 0ch
-	int 10h
-@@Skip:
-	pop cx
-	inc [bp+8]
-	loop @@DrawVertLine
-	
-	;mov ax, 2
-	;int 10h
-
-	pop cx
-	pop bx
-	pop ax
-	pop bp
-
-	ret 8
-endp DrawVerticalLineOnFruit
 
 
 
-;===========================
-;description - Draws a rectangle on fruit only
-;input - push in that order: x,y,len,wid,color
-;output - screen
-;variables - none
-;===========================
-proc DrawFullRectOnFruit
-	push bp
-	mov bp, sp
-	push cx
-	
-	mov cx, [bp+6]
-@@DrawR:
-	push [bp+12]
-	push [bp+10]
-	push [bp+8]
-	push [bp+4]
-	call DrawVerticalLineOnFruit
-	add [bp+12], 1
-	loop @@DrawR
 
-	pop cx
-	pop bp
-	
-	ret 10
-endp DrawFullRectOnFruit
 
 ;===========================
 ;description - Draws a vertical line
@@ -2406,67 +2378,6 @@ RandLoop: ;  generate random number
 endp RandomByCs
 
 
-; Description  : get RND between any bl and bh includs (max 0 - 65535)
-; Input        : 1. BX = min (from 0) , DX, Max (till 64k -1)
-; 			     2. RndCurrentPos a  word variable,   help to get good rnd number
-; 				 	Declre it at DATASEG :  RndCurrentPos dw ,0
-;				 3. EndOfCsLbl: is label at the end of the program one line above END start		
-; Output:        AX - rnd num from bx to dx  (example 50 - 1550)
-; More Info:
-; 	BX  must be less than DX 
-; 	in order to get good random value again and again the Code segment size should be 
-; 	at least the number of times the procedure called at the same second ... 
-; 	for example - if you call to this proc 50 times at the same second  - 
-; 	Make sure the cs size is 50 bytes or more 
-; 	(if not, make it to be more) 
-proc RandomByCsWord
-    push es
-	push si
-	push di
- 
-	
-	mov ax, 40h
-	mov	es, ax
-	
-	sub dx,bx  ; we will make rnd number between 0 to the delta between bx and dx
-			   ; Now dx holds only the delta
-	cmp dx,0
-	jz @@ExitP
-	
-	push bx
-	
-	mov di, [word RndCurrentPos]
-	call MakeMaskWord ; will put in si the right mask according the delta (bh) (example for 28 will put 31)
-	
-@@RandLoop: ;  generate random number 
-	mov bx, [es:06ch] ; read timer counter
-	
-	mov ax, [word cs:di] ; read one word from memory (from semi random bytes at cs)
-	xor ax, bx ; xor memory and counter
-	
-	; Now inc di in order to get a different number next time
-	inc di
-	inc di
-	cmp di,(EndOfCsLbl - start - 2)
-	jb @@Continue
-	mov di, offset start
-@@Continue:
-	mov [word RndCurrentPos], di
-	
-	and ax, si ; filter result between 0 and si (the nask)
-	
-	cmp ax,dx    ;do again if  above the delta
-	ja @@RandLoop
-	pop bx
-	add ax,bx  ; add the lower limit to the rnd num
-		 
-@@ExitP:
-	
-	pop di
-	pop si
-	pop es
-	ret
-endp RandomByCsWord
 
 ; make mask acording to bh size 
 ; output Si = mask put 1 in all bh range
@@ -2493,25 +2404,6 @@ Proc MakeMask
 endp  MakeMask
 
 
-Proc MakeMaskWord    
-    push dx
-	
-	mov si,1
-    
-@@again:
-	shr dx,1
-	cmp dx,0
-	jz @@EndProc
-	
-	shl si,1 ; add 1 to si at right
-	inc si
-	
-	jmp @@again
-	
-@@EndProc:
-    pop dx
-	ret
-endp  MakeMaskWord
 
 
 EndOfCsLbl:
